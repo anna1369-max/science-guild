@@ -513,6 +513,7 @@
                         {branchStudents.length === 0 && <div className="col-span-full text-center py-16 text-gray-500 bg-guild-dark rounded border border-dashed border-gray-700">這裡目前空無一人，趕快點擊右上角「招募與編制」來增加冒險者吧！</div>}
                     </div>
 
+                    {/* 紀律裁決 Modal */}
                     {showPenaltyModal && (
                         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
                             <div className="panel p-0 max-w-2xl w-full flex flex-col relative border-red-700 overflow-hidden shadow-[0_0_30px_rgba(185,28,28,0.3)]">
@@ -1459,7 +1460,6 @@
                             setPenaltyItems(data.penaltyItems || INITIAL_PENALTY_ITEMS);
                         }
                     } else {
-                        // ★ 修正核心：當雲端沒有資料時，絕對不要覆蓋本地資料為預設值！
                         // 讓系統保留原本從瀏覽器讀取到的進度，隨後它會自動上傳到雲端建立新存檔
                         console.log("雲端尚無存檔，準備將本地資料上傳同步...");
                     }
@@ -1611,7 +1611,7 @@
                     if (healedOthers) addLog(`✨ 聖光普照！牧師的祈禱為小隊成員恢復了 5 點生命。`, student.classId);
                 }
 
-                student = updatedStudents.find(s => s.id === student.id); 
+                student = updatedStudents.find(s => s.id === student.id); // 更新當前學生參考
 
                 // 結算對魔王傷害
                 if (damageDealt > 0) {
