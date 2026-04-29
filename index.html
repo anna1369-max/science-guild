@@ -1459,11 +1459,9 @@
                             setPenaltyItems(data.penaltyItems || INITIAL_PENALTY_ITEMS);
                         }
                     } else {
-                        // 初次使用，沒有資料
-                        setClasses(INITIAL_CLASSES);
-                        setStudents(INITIAL_STUDENTS);
-                        setGroups(INITIAL_GROUPS);
-                        setPenaltyItems(INITIAL_PENALTY_ITEMS);
+                        // ★ 修正核心：當雲端沒有資料時，絕對不要覆蓋本地資料為預設值！
+                        // 讓系統保留原本從瀏覽器讀取到的進度，隨後它會自動上傳到雲端建立新存檔
+                        console.log("雲端尚無存檔，準備將本地資料上傳同步...");
                     }
                     setIsCloudLoaded(true);
                 }, (error) => {
