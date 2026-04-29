@@ -704,29 +704,95 @@
             );
         };
 
-        const AdminPanel = ({ students, onApprove, onReject }) => {
+        const AdminPanel = ({ students, classes, onApprove, onReject, onArchiveClass, onDeleteClass }) => {
+            const [tab, setTab] = useState('avatar'); 
+            const [confirmModal, setConfirmModal] = useState(null);
             const pendingStudents = students.filter(s => s.avatar.customImageStatus === 'pending');
+
+            const executeAction = () => {
+                if (confirmModal.type === 'archive') onArchiveClass(confirmModal.classId);
+                else if (confirmModal.type === 'delete') onDeleteClass(confirmModal.classId);
+                setConfirmModal(null);
+            };
+
             return (
                 <div className="max-w-6xl mx-auto animate-fade-in space-y-6">
-                    <h2 className="text-3xl font-bold text-guild-gold border-b border-guild-gold/30 pb-2 flex items-center"><i className="fa-solid fa-gavel mr-3"></i> 老師辦公室 - 頭像審核中心</h2>
-                    <p className="text-guild-paper/80">以下冒險者申請更換為 Reroll 專屬自訂頭像，請確認圖片符合公會規範後予以批准。</p>
-                    {pendingStudents.length === 0 ? (
-                        <div className="panel p-16 text-center text-gray-500 border border-dashed border-gray-600"><i className="fa-solid fa-mug-hot text-4xl mb-4 opacity-50"></i><p>目前沒有需要審核的頭像，老師可以休息一下！</p></div>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {pendingStudents.map(s => (
-                                <div key={s.id} className="panel p-6 flex flex-col items-center relative hover:border-guild-gold/50 transition">
-                                    <h3 className="text-xl text-guild-paper font-bold mb-4">{s.name} <span className="text-sm text-gray-500 font-normal ml-2">Lv.{s.level}</span></h3>
-                                    <div className="flex gap-8 mb-6">
-                                        <div className="flex flex-col items-center opacity-60"><div className="text-xs mb-2 text-gray-400">目前頭像</div><AvatarDisplay student={{...s, avatar: {...s.avatar, customImageStatus: 'none'}}} size="w-24 h-24" showJob={false} previewPending={false} /></div>
-                                        <div className="flex flex-col items-center"><div className="text-xs mb-2 text-yellow-400 font-bold animate-pulse">申請上傳</div><AvatarDisplay student={s} size="w-24 h-24" showJob={false} previewPending={true} /></div>
+                    <h2 className="text-3xl font-bold text-guild-gold border-b border-guild-gold/30 pb-2 flex items-center"><i className="fa-solid fa-gavel mr-3"></i> 老師辦公室 - 管理後台</h2>
+                    
+                    <div className="flex border-b border-guild-gold/30 mb-6">
+                        <button onClick={() => setTab('avatar')} className={`px-6 py-3 font-bold transition ${tab === 'avatar' ? 'bg-guild-gold text-guild-dark' : 'text-gray-400 hover:text-white'}`}><i className="fa-solid fa-user-check mr-2"></i>頭像審核</button>
+                        <button onClick={() => setTab('class')} className={`px-6 py-3 font-bold transition ${tab === 'class' ? 'bg-guild-gold text-guild-dark' : 'text-gray-400 hover:text-white'}`}><i className="fa-solid fa-school mr-2"></i>分會(班級)管理</button>
+                    </div>
+
+                    {tab === 'avatar' && (
+                        <div className="space-y-6 animate-fade-in">
+                            <p className="text-guild-paper/80">以下冒險者申請更換為 Reroll 專屬自訂頭像，請確認圖片符合公會規範後予以批准。</p>
+                            {pendingStudents.length === 0 ? (
+                                <div className="panel p-16 text-center text-gray-500 border border-dashed border-gray-600"><i className="fa-solid fa-mug-hot text-4xl mb-4 opacity-50"></i><p>目前沒有需要審核的頭像，老師可以休息一下！</p></div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {pendingStudents.map(s => (
+                                        <div key={s.id} className="panel p-6 flex flex-col items-center relative hover:border-guild-gold/50 transition">
+                                            <h3 className="text-xl text-guild-paper font-bold mb-4">{s.name} <span className="text-sm text-gray-500 font-normal ml-2">Lv.{s.level}</span></h3>
+                                            <div className="flex gap-8 mb-6">
+                                                <div className="flex flex-col items-center opacity-60"><div className="text-xs mb-2 text-gray-400">目前頭像</div><AvatarDisplay student={{...s, avatar: {...s.avatar, customImageStatus: 'none'}}} size="w-24 h-24" showJob={false} previewPending={false} /></div>
+                                                <div className="flex flex-col items-center"><div className="text-xs mb-2 text-yellow-400 font-bold animate-pulse">申請上傳</div><AvatarDisplay student={s} size="w-24 h-24" showJob={false} previewPending={true} /></div>
+                                            </div>
+                                            <div className="flex w-full gap-3 mt-auto">
+                                                <button onClick={() => onApprove(s.id)} className="flex-1 py-3 bg-green-800 hover:bg-green-700 text-white font-bold rounded shadow-lg transition flex items-center justify-center"><i className="fa-solid fa-check mr-2"></i> 批准</button>
+                                                <button onClick={() => onReject(s.id)} className="flex-1 py-3 bg-red-900 hover:bg-red-800 text-white font-bold rounded shadow-lg transition flex items-center justify-center"><i className="fa-solid fa-xmark mr-2"></i> 駁回</button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {tab === 'class' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
+                            {classes.map(c => (
+                                <div key={c.id} className="panel p-6 flex flex-col relative hover:border-guild-gold/50 transition border border-gray-700">
+                                    {c.isArchived && <div className="absolute top-0 right-0 bg-yellow-700 text-white text-xs px-3 py-1 rounded-bl-lg rounded-tr-md font-bold shadow">已出師(封存)</div>}
+                                    <h3 className={`text-2xl font-bold mb-2 ${c.isArchived ? 'text-gray-400' : 'text-guild-gold'}`}>{c.name}</h3>
+                                    <div className="text-gray-400 text-sm mb-6">
+                                        冒險者人數: <span className="text-guild-paper font-bold">{students.filter(s => s.classId === c.id).length}</span> 人
                                     </div>
                                     <div className="flex w-full gap-3 mt-auto">
-                                        <button onClick={() => onApprove(s.id)} className="flex-1 py-3 bg-green-800 hover:bg-green-700 text-white font-bold rounded shadow-lg transition flex items-center justify-center"><i className="fa-solid fa-check mr-2"></i> 批准</button>
-                                        <button onClick={() => onReject(s.id)} className="flex-1 py-3 bg-red-900 hover:bg-red-800 text-white font-bold rounded shadow-lg transition flex items-center justify-center"><i className="fa-solid fa-xmark mr-2"></i> 駁回</button>
+                                        <button onClick={() => setConfirmModal({type: 'archive', classId: c.id, className: c.name})} className={`flex-1 py-2 ${c.isArchived ? 'bg-blue-800 hover:bg-blue-700 border-blue-600' : 'bg-yellow-800 hover:bg-yellow-700 border-yellow-600'} text-white font-bold rounded border shadow transition text-sm flex items-center justify-center`}>
+                                            <i className={`fa-solid ${c.isArchived ? 'fa-box-open' : 'fa-box-archive'} mr-2`}></i> {c.isArchived ? '解除封存' : '出師封存'}
+                                        </button>
+                                        <button onClick={() => setConfirmModal({type: 'delete', classId: c.id, className: c.name})} className="flex-1 py-2 bg-red-900 hover:bg-red-800 border border-red-700 text-white font-bold rounded shadow transition text-sm flex items-center justify-center">
+                                            <i className="fa-solid fa-trash mr-2"></i> 刪除分會
+                                        </button>
                                     </div>
                                 </div>
                             ))}
+                            {classes.length === 0 && <div className="col-span-full text-gray-500 text-center py-10">目前沒有任何分會資料。</div>}
+                        </div>
+                    )}
+
+                    {confirmModal && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[100]">
+                            <div className={`panel p-6 max-w-md w-full text-center border shadow-2xl ${confirmModal.type === 'delete' ? 'border-red-500 shadow-red-900/50' : 'border-yellow-500 shadow-yellow-900/50'}`}>
+                                <i className={`fa-solid ${confirmModal.type === 'delete' ? 'fa-triangle-exclamation text-red-500' : 'fa-box-archive text-yellow-500'} text-5xl mb-4 animate-bounce`}></i>
+                                <h3 className="text-2xl font-bold text-white mb-2">
+                                    {confirmModal.type === 'delete' ? '永久刪除警告' : '出師封存確認'}
+                                </h3>
+                                <p className="text-gray-300 mb-6 leading-relaxed">
+                                    {confirmModal.type === 'delete'
+                                        ? `您確定要永久刪除【${confirmModal.className}】嗎？此動作將清除該班級所有的冒險者、小隊與任務日誌，且無法復原！`
+                                        : `確定要更改【${confirmModal.className}】的封存狀態嗎？出師封存後的班級將不會顯示在首頁的世界地圖上。`}
+                                </p>
+                                <div className="flex gap-4 justify-center">
+                                    <button onClick={executeAction} className={`px-8 py-3 font-bold rounded shadow-lg transition ${confirmModal.type === 'delete' ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-yellow-700 hover:bg-yellow-600 text-white'}`}>
+                                        確定{confirmModal.type === 'delete' ? '刪除' : '執行'}
+                                    </button>
+                                    <button onClick={() => setConfirmModal(null)} className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded shadow-lg transition">
+                                        取消
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -1716,6 +1782,29 @@
                 addLog(`❌ 教師已駁回 ${updated[sIndex].name} 的頭像申請，請重新上傳。`, updated[sIndex].classId);
             };
 
+            const handleArchiveClass = (classId) => {
+                setClasses(prev => prev.map(c => c.id === classId ? { ...c, isArchived: !c.isArchived } : c));
+                addLog(`📜 分會封存狀態已更新。`, null);
+            };
+
+            const handleDeleteClass = (classId) => {
+                const classGroups = groups.filter(g => g.classId === classId);
+                const groupIds = classGroups.map(g => g.id);
+
+                setSquadBosses(prev => {
+                    const next = { ...prev };
+                    groupIds.forEach(id => delete next[id]);
+                    return next;
+                });
+
+                setStudents(prev => prev.filter(s => s.classId !== classId));
+                setGroups(prev => prev.filter(g => g.classId !== classId));
+                setLogs(prev => prev.filter(l => l.classId !== classId));
+                setClasses(prev => prev.filter(c => c.id !== classId));
+                
+                addLog(`🗑️ 已永久刪除一個分會及其所有資料。`, null);
+            };
+
             const buyItem = (studentId, item) => {
                 let updated = [...students];
                 let sIndex = updated.findIndex(s => s.id === studentId);
@@ -1810,7 +1899,7 @@
                             <p className="text-guild-paper/70 mb-10 text-lg">世界地圖 - 請選擇您要進入的分會大廳</p>
                             
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-10">
-                                {classes.map(c => (
+                                {classes.filter(c => !c.isArchived).map(c => (
                                     <button key={c.id} onClick={() => setCurrentClassId(c.id)} className="panel p-8 border border-guild-gold/30 hover:border-guild-gold hover:bg-guild-gold/10 transition group transform hover:-translate-y-1">
                                         <i className="fa-solid fa-dungeon text-4xl text-gray-500 group-hover:text-guild-gold mb-4 transition duration-300"></i>
                                         <h3 className="text-2xl font-bold text-guild-paper group-hover:text-white transition">{c.name}</h3>
@@ -1873,7 +1962,7 @@
                     )}
 
                     <main className="flex-1 p-4 md:p-8 overflow-y-auto">
-                        {view === 'admin' && <AdminPanel students={students} onApprove={handleApproveCustomAvatar} onReject={handleRejectCustomAvatar} />}
+                        {view === 'admin' && <AdminPanel students={students} classes={classes} onApprove={handleApproveCustomAvatar} onReject={handleRejectCustomAvatar} onArchiveClass={handleArchiveClass} onDeleteClass={handleDeleteClass} />}
                         {view === 'dashboard' && <Dashboard classId={currentClassId} groups={groups} students={students} logs={logs} />}
                         {view === 'roster' && <Roster classId={currentClassId} groups={groups} students={students} getGroup={getGroup} onOpenShop={setShopBuyerId} onOpenAvatarEditor={setEditingAvatarId} onAddGroup={handleAddGroup} onAddStudent={handleAddStudent} />}
                         {view === 'quest' && <QuestBoard classId={currentClassId} students={students} groups={groups} squadBosses={squadBosses} guildBoss={guildBoss} onResult={handleQuestResult} onSpawnBoss={handleSpawnBoss} onBossAttack={handleBossAttack} />}
