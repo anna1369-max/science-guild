@@ -1363,10 +1363,10 @@
             const [guildBoss, setGuildBoss] = useState(null);
             const [penaltyItems, setPenaltyItems] = useState([]);
             
-            // ★ 新增：Firebase 雲端連線狀態
+            // ★ 新增：Firebase 雲端連線狀態與阻斷機制
             const [user, setUser] = useState(null);
             const [isCloudLoaded, setIsCloudLoaded] = useState(false);
-            const lastCloudData = useRef("");
+            const isRemoteUpdate = useRef(false); // 阻斷無限迴圈的關鍵
 
             // 初始化 Firebase 模組
             useEffect(() => {
@@ -1421,46 +1421,45 @@
                 const unsubscribeData = window.onSnapshot(stateRef, (docSnap) => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
-                        const dataStr = JSON.stringify(data);
                         
-                        // 避免迴圈，只有當遠端內容真的不同時才更新本地 State
-                        if (dataStr !== lastCloudData.current) {
-                            lastCloudData.current = dataStr;
-                            setClasses(data.classes || []);
-                            
-                            // 解析並還原頭像屬性
-                            let parsedStudents = data.students || [];
-                            parsedStudents = parsedStudents.map(s => {
-                                let av = s.avatar || {};
-                                return {
-                                    ...s, 
-                                    avatar: {
-                                        seed: av.seed || s.name,
-                                        skinColor: AVATAR_OPTIONS.skinColor.some(o => o.id === av.skinColor) ? av.skinColor : 'f2d3b1',
-                                        hairColor: AVATAR_OPTIONS.hairColor.some(o => o.id === av.hairColor) ? av.hairColor : '111111',
-                                        head: AVATAR_OPTIONS.head.some(o => o.id === av.head) ? av.head : 'variant01', 
-                                        hair: AVATAR_OPTIONS.hair.some(o => o.id === av.hair) ? av.hair : 'variant01',
-                                        eyes: AVATAR_OPTIONS.eyes.some(o => o.id === av.eyes) ? av.eyes : 'variant01',
-                                        eyebrows: AVATAR_OPTIONS.eyebrows.some(o => o.id === av.eyebrows) ? av.eyebrows : 'variant01',
-                                        mouth: AVATAR_OPTIONS.mouth.some(o => o.id === av.mouth) ? av.mouth : 'happy01',
-                                        glasses: AVATAR_OPTIONS.glasses.some(o => o.id === av.glasses) ? av.glasses : 'none',
-                                        freckles: AVATAR_OPTIONS.freckles.some(o => o.id === av.freckles) ? av.freckles : '0',
-                                        frameClass: av.frameClass || 'border-gray-500',
-                                        unlockedFrames: av.unlockedFrames || ['border-gray-500'],
-                                        customImage: av.customImage || null,
-                                        customImageStatus: av.customImageStatus || 'none'
-                                    }
-                                };
-                            });
-                            setStudents(parsedStudents);
-                            setGroups(data.groups || []);
-                            setLogs(data.logs || []);
-                            setSquadBosses(data.squadBosses || {});
-                            setGuildBoss(data.guildBoss || null);
-                            setPenaltyItems(data.penaltyItems || INITIAL_PENALTY_ITEMS);
-                        }
+                        // ★ 核心修復：標記這是一次「由雲端下載」引發的狀態改變
+                        isRemoteUpdate.current = true;
+                        
+                        setClasses(data.classes || []);
+                        
+                        // 解析並還原頭像屬性
+                        let parsedStudents = data.students || [];
+                        parsedStudents = parsedStudents.map(s => {
+                            let av = s.avatar || {};
+                            return {
+                                ...s, 
+                                avatar: {
+                                    seed: av.seed || s.name,
+                                    skinColor: AVATAR_OPTIONS.skinColor.some(o => o.id === av.skinColor) ? av.skinColor : 'f2d3b1',
+                                    hairColor: AVATAR_OPTIONS.hairColor.some(o => o.id === av.hairColor) ? av.hairColor : '111111',
+                                    head: AVATAR_OPTIONS.head.some(o => o.id === av.head) ? av.head : 'variant01', 
+                                    hair: AVATAR_OPTIONS.hair.some(o => o.id === av.hair) ? av.hair : 'variant01',
+                                    eyes: AVATAR_OPTIONS.eyes.some(o => o.id === av.eyes) ? av.eyes : 'variant01',
+                                    eyebrows: AVATAR_OPTIONS.eyebrows.some(o => o.id === av.eyebrows) ? av.eyebrows : 'variant01',
+                                    mouth: AVATAR_OPTIONS.mouth.some(o => o.id === av.mouth) ? av.mouth : 'happy01',
+                                    glasses: AVATAR_OPTIONS.glasses.some(o => o.id === av.glasses) ? av.glasses : 'none',
+                                    freckles: AVATAR_OPTIONS.freckles.some(o => o.id === av.freckles) ? av.freckles : '0',
+                                    frameClass: av.frameClass || 'border-gray-500',
+                                    unlockedFrames: av.unlockedFrames || ['border-gray-500'],
+                                    customImage: av.customImage || null,
+                                    customImageStatus: av.customImageStatus || 'none'
+                                }
+                            };
+                        });
+                        setStudents(parsedStudents);
+                        setGroups(data.groups || []);
+                        setLogs(data.logs || []);
+                        setSquadBosses(data.squadBosses || {});
+                        setGuildBoss(data.guildBoss || null);
+                        setPenaltyItems(data.penaltyItems || INITIAL_PENALTY_ITEMS);
+                        
                     } else {
-                        // 讓系統保留原本從瀏覽器讀取到的進度，隨後它會自動上傳到雲端建立新存檔
+                        // 讓系統保留原本從瀏覽器讀取到的進度，隨後自動上傳到雲端建立新存檔
                         console.log("雲端尚無存檔，準備將本地資料上傳同步...");
                     }
                     setIsCloudLoaded(true);
@@ -1471,19 +1470,61 @@
                 return () => unsubscribeData();
             }, [user]);
 
-            // 本地資料改變時，同步寫入遠端
+            // 存取本地暫存
             useEffect(() => {
+                const savedClasses = localStorage.getItem('guild_classes');
+                const savedStudents = localStorage.getItem('guild_students');
+                const savedGroups = localStorage.getItem('guild_groups');
+                const savedLogs = localStorage.getItem('guild_logs');
+                const savedSquadBosses = localStorage.getItem('guild_squad_bosses');
+                const savedGuildBoss = localStorage.getItem('guild_guild_boss');
+                const savedPenaltyItems = localStorage.getItem('guild_penalty_items');
+                
+                // 本地若有存檔先載入，等待 Firebase 連線後再覆蓋
+                if (savedClasses && savedStudents && savedGroups) {
+                    setClasses(JSON.parse(savedClasses));
+                    setStudents(JSON.parse(savedStudents));
+                    setGroups(JSON.parse(savedGroups));
+                    if (savedLogs) setLogs(JSON.parse(savedLogs));
+                    if (savedSquadBosses) setSquadBosses(JSON.parse(savedSquadBosses));
+                    if (savedGuildBoss) setGuildBoss(JSON.parse(savedGuildBoss));
+                    if (savedPenaltyItems) setPenaltyItems(JSON.parse(savedPenaltyItems));
+                } else {
+                    setClasses(INITIAL_CLASSES);
+                    setStudents(INITIAL_STUDENTS);
+                    setGroups(INITIAL_GROUPS);
+                    setPenaltyItems(INITIAL_PENALTY_ITEMS);
+                }
+            }, []);
+
+            // 本地資料改變時，同步寫入遠端與本地端
+            useEffect(() => {
+                if (classes.length > 0) {
+                    localStorage.setItem('guild_classes', JSON.stringify(classes));
+                    localStorage.setItem('guild_students', JSON.stringify(students));
+                    localStorage.setItem('guild_groups', JSON.stringify(groups));
+                    localStorage.setItem('guild_logs', JSON.stringify(logs));
+                    localStorage.setItem('guild_squad_bosses', JSON.stringify(squadBosses));
+                    localStorage.setItem('guild_guild_boss', JSON.stringify(guildBoss));
+                    localStorage.setItem('guild_penalty_items', JSON.stringify(penaltyItems));
+                }
+
                 if (!isCloudLoaded || !user || !window.db) return;
                 
-                const payload = { classes, students, groups, logs, squadBosses, guildBoss, penaltyItems };
-                const dataStr = JSON.stringify(payload);
-                
-                if (dataStr !== lastCloudData.current) {
-                    lastCloudData.current = dataStr;
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'science-guild';
-                    const stateRef = window.doc(window.db, 'artifacts', appId, 'public', 'data', 'guildData', 'mainState');
-                    window.setDoc(stateRef, payload).catch(console.error);
+                // ★ 核心修復：阻斷無限迴圈。如果是接收雲端資料而導致的渲染，不要寫回雲端
+                if (isRemoteUpdate.current) {
+                    isRemoteUpdate.current = false;
+                    return;
                 }
+                
+                const payload = { classes, students, groups, logs, squadBosses, guildBoss, penaltyItems };
+                // 淨化物件 (過濾所有可能造成 Firebase 當機的 undefined 屬性)
+                const cleanPayload = JSON.parse(JSON.stringify(payload));
+                
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'science-guild';
+                const stateRef = window.doc(window.db, 'artifacts', appId, 'public', 'data', 'guildData', 'mainState');
+                window.setDoc(stateRef, cleanPayload).catch(console.error);
+                
             }, [classes, students, groups, logs, squadBosses, guildBoss, penaltyItems, isCloudLoaded, user]);
 
             const addLog = (msg, targetClassId = currentClassId) => {
