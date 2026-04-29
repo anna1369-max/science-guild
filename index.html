@@ -187,7 +187,6 @@
             { id: 'gb3', type: 'guild', name: '深淵克蘇魯', diff: '世界首領', exp: 15000, gold: 8000, maxHp: 5000, dmg: 80, icon: 'fa-spaghetti-monster-flying', color: 'text-indigo-600' }
         ];
 
-        // ★ 更新：雙階段別具特色的實體武器庫
         const SHOP_ITEMS = [
             { id: 'i1', name: '初級治療藥水', desc: '恢復 10 點生命值', cost: 30, type: 'consumable', effect: (s, effectiveMaxHp) => ({...s, hp: Math.min(s.hp + 10, effectiveMaxHp)}) },
             { id: 'i2', name: '復活十字章', desc: '抵擋一次死亡懲罰(自動消耗)', cost: 150, type: 'passive' },
@@ -228,11 +227,20 @@
         const INITIAL_CLASSES = [ { id: 1, name: '701班' }, { id: 2, name: '702班' } ];
         const INITIAL_GROUPS = [ { id: 1, classId: 1, name: '獅鷲小隊', score: 0 }, { id: 2, classId: 1, name: '獨角獸小隊', score: 0 }, { id: 3, classId: 2, name: '鳳凰小隊', score: 0 } ];
         
+        // ★ 更新：所有新手冒險者初始金錢為 0，經驗值為 0
         const INITIAL_STUDENTS = [
-            { id: 1, classId: 1, name: '亞瑟', groupId: 1, level: 1, exp: 0, gold: 50, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Arthur') },
-            { id: 2, classId: 1, name: '梅林', groupId: 1, level: 1, exp: 0, gold: 50, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Merlin') },
-            { id: 3, classId: 1, name: '羅賓', groupId: 2, level: 1, exp: 0, gold: 50, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Robin') },
-            { id: 4, classId: 2, name: '貞德', groupId: 3, level: 1, exp: 0, gold: 50, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Jeanne') },
+            { id: 1, classId: 1, name: '亞瑟', groupId: 1, level: 1, exp: 0, gold: 0, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Arthur') },
+            { id: 2, classId: 1, name: '梅林', groupId: 1, level: 1, exp: 0, gold: 0, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Merlin') },
+            { id: 3, classId: 1, name: '羅賓', groupId: 2, level: 1, exp: 0, gold: 0, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Robin') },
+            { id: 4, classId: 2, name: '貞德', groupId: 3, level: 1, exp: 0, gold: 0, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Jeanne') },
+        ];
+
+        // ★ 新增：預設的紀律裁決(扣分)項目
+        const INITIAL_PENALTY_ITEMS = [
+            { id: 1, name: '未交作業', points: 20 },
+            { id: 2, name: '上課吵鬧', points: 10 },
+            { id: 3, name: '遲到早退', points: 15 },
+            { id: 4, name: '破壞秩序', points: 30 }
         ];
 
         const getGroupSynergy = (groupId, allStudents) => {
@@ -359,7 +367,8 @@
         const Dashboard = ({ classId, groups, students, logs }) => {
             const branchGroups = groups.filter(g => g.classId === classId).sort((a, b) => b.score - a.score);
             const branchStudents = students.filter(s => s.classId === classId).sort((a, b) => b.level - a.level || b.exp - a.exp).slice(0, 5);
-            const branchLogs = logs.filter(l => l.classId === classId || l.classId === null);
+            // ★ 更新：分會日誌只顯示該分會的紀錄
+            const branchLogs = logs.filter(l => l.classId === classId);
 
             return (
                 <div className="space-y-6 max-w-6xl mx-auto animate-fade-in">
@@ -402,7 +411,8 @@
                                                 <div className="text-xs text-gray-400">Lv.{s.level} {s.job}</div>
                                             </div>
                                         </div>
-                                        <div className="text-guild-gold font-bold">{s.level * 1000 + s.exp} <span className="text-xs text-gray-500">總分</span></div>
+                                        {/* ★ 更新：總分公式修改為從 0 級開始算 */}
+                                        <div className="text-guild-gold font-bold">{(s.level - 1) * 1000 + s.exp} <span className="text-xs text-gray-500">總分</span></div>
                                     </div>
                                 ))}
                                 {branchStudents.length === 0 && <div className="text-gray-500 text-center py-4">尚無冒險者資料</div>}
@@ -422,12 +432,19 @@
             );
         };
 
-        const Roster = ({ classId, groups, students, getGroup, onOpenShop, onOpenAvatarEditor, onAddGroup, onAddStudent }) => {
+        const Roster = ({ classId, groups, students, getGroup, onOpenShop, onOpenAvatarEditor, onAddGroup, onAddStudent, penaltyItems, onAddPenaltyItem, onDeletePenaltyItem, onApplyPenalty }) => {
             const [showManageModal, setShowManageModal] = useState(false);
             const [manageTab, setManageTab] = useState('student'); 
             const [newGroupName, setNewGroupName] = useState('');
             const [newStudentName, setNewStudentName] = useState('');
             const [newStudentGroupId, setNewStudentGroupId] = useState('');
+            
+            // 紀律處分用的 state
+            const [showPenaltyModal, setShowPenaltyModal] = useState(false);
+            const [selectedPenaltyStudentId, setSelectedPenaltyStudentId] = useState('');
+            const [selectedPenaltyId, setSelectedPenaltyId] = useState('');
+            const [newPName, setNewPName] = useState('');
+            const [newPPts, setNewPPts] = useState('');
 
             const branchStudents = students.filter(s => s.classId === classId);
             const branchGroups = groups.filter(g => g.classId === classId);
@@ -436,9 +453,14 @@
                 <div className="max-w-7xl mx-auto animate-fade-in">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-guild-gold/30 pb-4 mb-6 gap-4">
                         <h2 className="text-3xl font-bold text-guild-gold">冒險者名冊</h2>
-                        <button onClick={() => setShowManageModal(true)} className="px-4 py-2 bg-blue-900 hover:bg-blue-800 text-white font-bold rounded border border-blue-600 transition shadow flex items-center">
-                            <i className="fa-solid fa-user-plus mr-2"></i> 招募與編制
-                        </button>
+                        <div className="flex gap-2">
+                            <button onClick={() => setShowPenaltyModal(true)} className="px-4 py-2 bg-red-900 hover:bg-red-800 text-white font-bold rounded border border-red-700 transition shadow flex items-center">
+                                <i className="fa-solid fa-gavel mr-2"></i> 紀律裁決
+                            </button>
+                            <button onClick={() => setShowManageModal(true)} className="px-4 py-2 bg-blue-900 hover:bg-blue-800 text-white font-bold rounded border border-blue-600 transition shadow flex items-center">
+                                <i className="fa-solid fa-user-plus mr-2"></i> 招募與編制
+                            </button>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
@@ -495,6 +517,63 @@
                         })}
                         {branchStudents.length === 0 && <div className="col-span-full text-center py-16 text-gray-500 bg-guild-dark rounded border border-dashed border-gray-700">這裡目前空無一人，趕快點擊右上角「招募與編制」來增加冒險者吧！</div>}
                     </div>
+
+                    {/* 紀律裁決 Modal */}
+                    {showPenaltyModal && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+                            <div className="panel p-0 max-w-2xl w-full flex flex-col relative border-red-700 overflow-hidden shadow-[0_0_30px_rgba(185,28,28,0.3)]">
+                                <button onClick={() => {setShowPenaltyModal(false); setSelectedPenaltyStudentId(''); setSelectedPenaltyId('');}} className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl transition hover:rotate-90 z-10"><i className="fa-solid fa-xmark"></i></button>
+                                <div className="p-6 border-b border-red-900/50 bg-red-950/30">
+                                    <h2 className="text-2xl font-bold text-red-500"><i className="fa-solid fa-gavel mr-2"></i>紀律裁決 (扣除總分)</h2>
+                                    <p className="text-red-200/70 text-sm mt-1">執行公會紀律，扣除冒險者經驗值(總分)。若經驗值歸零將會自動降級。</p>
+                                </div>
+                                <div className="p-6 bg-guild-panel flex flex-col gap-6">
+                                    <div>
+                                        <label className="block text-sm text-guild-paper mb-2 font-bold">1. 選擇要處分的冒險者</label>
+                                        <select value={selectedPenaltyStudentId} onChange={e => setSelectedPenaltyStudentId(e.target.value)} className="w-full p-3 bg-guild-dark border border-gray-600 rounded text-guild-paper focus:outline-none focus:border-red-500">
+                                            <option value="">-- 請選擇冒險者 --</option>
+                                            {branchStudents.map(s => <option key={s.id} value={s.id}>{s.name} (Lv.{s.level} - 總分:{(s.level-1)*1000 + s.exp})</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm text-guild-paper mb-2 font-bold">2. 選擇違規項目</label>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-40 overflow-y-auto custom-scrollbar pr-2">
+                                            {penaltyItems.map(item => (
+                                                <div key={item.id} onClick={() => setSelectedPenaltyId(item.id)} className={`panel p-3 border cursor-pointer relative transition ${selectedPenaltyId === item.id ? 'border-red-500 bg-red-900/30 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'border-gray-600 hover:border-red-400/50 bg-guild-dark/50'}`}>
+                                                    <div className="font-bold text-guild-paper text-sm pr-6">{item.name}</div>
+                                                    <div className="text-red-400 font-bold mt-1">- {item.points} EXP</div>
+                                                    <button onClick={(e) => { e.stopPropagation(); onDeletePenaltyItem(item.id); }} className="absolute top-2 right-2 text-gray-500 hover:text-red-500 transition"><i className="fa-solid fa-trash"></i></button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="border-t border-gray-700 pt-4">
+                                        <label className="block text-sm text-gray-400 mb-2">自訂新增違規項目</label>
+                                        <div className="flex gap-2">
+                                            <input type="text" placeholder="項目名稱 (例: 未交作業)" value={newPName} onChange={e=>setNewPName(e.target.value)} className="flex-1 p-2 bg-guild-dark border border-gray-600 rounded text-white text-sm focus:outline-none" />
+                                            <input type="number" placeholder="扣除分數" value={newPPts} onChange={e=>setNewPPts(e.target.value)} className="w-24 p-2 bg-guild-dark border border-gray-600 rounded text-white text-sm focus:outline-none" />
+                                            <button onClick={() => { if(newPName && newPPts){ onAddPenaltyItem(newPName, newPPts); setNewPName(''); setNewPPts(''); } }} className="px-4 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm font-bold transition">新增</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="p-4 border-t border-red-900/50 bg-guild-dark">
+                                    <button 
+                                        onClick={() => {
+                                            if(!selectedPenaltyStudentId || !selectedPenaltyId) return alert("請選擇冒險者與違規項目！");
+                                            onApplyPenalty(selectedPenaltyStudentId, selectedPenaltyId);
+                                            setShowPenaltyModal(false);
+                                            setSelectedPenaltyStudentId('');
+                                            setSelectedPenaltyId('');
+                                        }} 
+                                        disabled={!selectedPenaltyStudentId || !selectedPenaltyId} 
+                                        className="w-full py-4 bg-red-800 hover:bg-red-700 disabled:bg-gray-800 disabled:text-gray-500 text-white font-extrabold rounded shadow-lg transition text-lg"
+                                    >
+                                        <i className="fa-solid fa-bolt mr-2"></i> 執行裁決
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {showManageModal && (
                         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
@@ -1280,122 +1359,6 @@
             );
         };
 
-        const Shop = ({ buyer, onBuy, onClose }) => {
-            if (!buyer) return null;
-            
-            const groups = JSON.parse(localStorage.getItem('guild_groups') || '[]');
-            const students = JSON.parse(localStorage.getItem('guild_students') || '[]');
-            const synergy = getGroupSynergy(buyer.groupId, students);
-            const effectiveMaxHp = buyer.maxHp + synergy.hpBonus;
-
-            return (
-                <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-4 z-50">
-                    <div className="panel p-6 max-w-6xl w-full max-h-[90vh] flex flex-col relative border-guild-gold shadow-[0_0_30px_rgba(197,159,68,0.3)]">
-                        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white text-3xl transition hover:rotate-90 z-10"><i className="fa-solid fa-xmark"></i></button>
-                        <h2 className="text-3xl font-bold text-guild-gold border-b border-guild-gold/30 pb-3 mb-6"><i className="fa-solid fa-store mr-2"></i>道具與武器商行</h2>
-                        <div className="flex flex-col md:flex-row gap-8 overflow-y-auto pr-2 custom-scrollbar">
-                            
-                            {/* 左側：冒險者屬性面板 */}
-                            <div className="md:w-1/3 shrink-0">
-                                <div className="bg-guild-dark p-6 rounded-lg border border-guild-gold/30 sticky top-0 shadow-lg flex flex-col items-center">
-                                    <AvatarDisplay student={buyer} size="w-32 h-32" />
-                                    <div className="text-guild-gold font-bold text-xl mt-4 mb-1">{buyer.name}</div>
-                                    <div className="text-sm text-gray-400 mb-4">Lv.{buyer.level} {buyer.job}</div>
-                                    <div className="w-full space-y-3 text-sm bg-black/30 p-4 rounded-lg">
-                                        <div className="flex justify-between items-center"><span className="text-gray-400">生命:</span> <span><span className="text-red-400">{buyer.hp}</span> / {effectiveMaxHp}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-gray-400">財富:</span> <span className="text-yellow-400 font-bold text-lg">{buyer.gold} G</span></div>
-                                        <div className="flex justify-between items-center pt-2 border-t border-gray-700"><span className="text-gray-400">裝備:</span> <span className="text-blue-300 font-bold">{buyer.equipment ? buyer.equipment.name : '無'}</span></div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* 右側：商城列表 */}
-                            <div className="md:w-2/3 h-fit">
-                                <h3 className="text-lg font-bold text-guild-paper mb-3 flex items-center"><i className="fa-solid fa-flask mr-2 text-blue-400"></i>消耗品與憑證</h3>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-                                    {SHOP_ITEMS.filter(item => item.type === 'consumable' || item.type === 'passive' || item.type === 'special').map(item => {
-                                        const canAfford = buyer.gold >= item.cost;
-                                        const isWrongJob = item.job && buyer.job !== item.job;
-                                        const disabled = !canAfford || isWrongJob;
-                                        
-                                        let itemBg = 'bg-guild-dark/50 hover:bg-guild-dark border-transparent hover:border-guild-gold/30';
-                                        let titleColor = 'text-guild-paper';
-                                        if (item.type === 'special') {
-                                            itemBg = 'bg-purple-900/30 border-purple-500/50 hover:bg-purple-900/50';
-                                            titleColor = 'text-purple-300';
-                                        }
-
-                                        return (
-                                            <div key={item.id} className={`panel p-4 flex flex-col transition border relative overflow-hidden ${itemBg}`}>
-                                                <div className="flex justify-between items-start mb-2 z-10">
-                                                    <h4 className={`font-bold text-lg ${titleColor}`}>{item.name}</h4>
-                                                    <span className="text-guild-gold font-bold bg-yellow-900/30 px-2 py-1 rounded text-sm"><i className="fa-solid fa-coins mr-1"></i>{item.cost}</span>
-                                                </div>
-                                                <p className="text-xs text-gray-400 mb-4 flex-grow z-10 leading-relaxed">{item.desc}</p>
-                                                {item.job && <div className="text-xs font-bold text-blue-400 mb-3 z-10"><i className="fa-solid fa-circle-exclamation mr-1"></i>限定職業: {item.job}</div>}
-                                                <button onClick={() => onBuy(buyer.id, item)} disabled={disabled} className={`mt-auto w-full py-2 rounded font-bold transition flex items-center justify-center gap-2 z-10 ${disabled ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : (item.type === 'special' ? 'bg-purple-600 text-white hover:bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'bg-guild-gold text-guild-dark hover:bg-yellow-400 hover:scale-[1.02]')}`}>
-                                                    {isWrongJob ? <><i className="fa-solid fa-ban"></i> 職業不符</> : !canAfford ? <><i className="fa-solid fa-lock"></i> 金幣不足</> : <><i className="fa-solid fa-cart-shopping"></i> 購買</>}
-                                                </button>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-
-                                <h3 className="text-lg font-bold text-blue-400 mb-3 flex items-center"><i className="fa-solid fa-khanda mr-2"></i>職業專屬武器 (裝備可獲得加成)</h3>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-                                    {SHOP_ITEMS.filter(item => item.type === 'equipment').map(item => {
-                                        const canAfford = buyer.gold >= item.cost;
-                                        const isWrongJob = item.job && buyer.job !== item.job;
-                                        const disabled = !canAfford || isWrongJob;
-                                        
-                                        // 判斷 T2 武器賦予藍色史詩光芒
-                                        let itemBg = 'bg-guild-dark/50 hover:bg-guild-dark border-transparent hover:border-guild-gold/30';
-                                        let titleColor = 'text-guild-paper';
-                                        if (item.id.includes('w2_')) {
-                                            itemBg = 'bg-blue-900/20 border-blue-500/40 hover:bg-blue-900/40 hover:border-blue-400';
-                                            titleColor = 'text-blue-300';
-                                        }
-
-                                        return (
-                                            <div key={item.id} className={`panel p-4 flex flex-col transition border relative overflow-hidden ${itemBg}`}>
-                                                <div className="flex justify-between items-start mb-2 z-10">
-                                                    <h4 className={`font-bold text-lg ${titleColor}`}>{item.name}</h4>
-                                                    <span className="text-guild-gold font-bold bg-yellow-900/30 px-2 py-1 rounded text-sm"><i className="fa-solid fa-coins mr-1"></i>{item.cost}</span>
-                                                </div>
-                                                <p className="text-xs text-gray-400 mb-4 flex-grow z-10 leading-relaxed">{item.desc}</p>
-                                                {item.job && <div className="text-xs font-bold text-blue-400 mb-3 z-10"><i className="fa-solid fa-circle-exclamation mr-1"></i>限定職業: {item.job}</div>}
-                                                <button onClick={() => onBuy(buyer.id, item)} disabled={disabled} className={`mt-auto w-full py-2 rounded font-bold transition flex items-center justify-center gap-2 z-10 ${disabled ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : (item.id.includes('w2_') ? 'bg-blue-700 text-white hover:bg-blue-600 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : 'bg-guild-gold text-guild-dark hover:bg-yellow-400 hover:scale-[1.02]')}`}>
-                                                    {isWrongJob ? <><i className="fa-solid fa-ban"></i> 職業不符</> : !canAfford ? <><i className="fa-solid fa-lock"></i> 金幣不足</> : <><i className="fa-solid fa-khanda"></i> 裝備</>}
-                                                </button>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-
-                                <h3 className="text-lg font-bold text-yellow-500 mb-3 flex items-center"><i className="fa-solid fa-crown mr-2"></i>尊爵頭像外框 (解鎖永久擁有)</h3>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    {SHOP_ITEMS.filter(item => item.type === 'frame').map(item => {
-                                        const canAfford = buyer.gold >= item.cost;
-                                        const isOwned = buyer.avatar.unlockedFrames.includes(item.value);
-                                        const disabled = !canAfford || isOwned;
-                                        return (
-                                            <div key={item.id} className="panel p-4 flex flex-col bg-guild-dark border border-yellow-700/50 relative overflow-hidden">
-                                                <div className="flex justify-between items-start mb-2 z-10"><h4 className="font-bold text-lg text-yellow-500">{item.name}</h4><span className="text-guild-gold font-bold bg-yellow-900/30 px-2 py-1 rounded text-sm"><i className="fa-solid fa-coins mr-1"></i>{item.cost}</span></div>
-                                                <p className="text-xs text-yellow-200/60 mb-4 flex-grow z-10">{item.desc}</p>
-                                                <button onClick={() => onBuy(buyer.id, item)} disabled={disabled} className={`mt-auto w-full py-2 rounded font-bold transition flex items-center justify-center gap-2 z-10 ${isOwned ? 'bg-green-900/50 text-green-400 border border-green-600 cursor-not-allowed' : disabled ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-yellow-600 text-white hover:bg-yellow-500 shadow-[0_0_10px_rgba(202,138,4,0.5)]'}`}>
-                                                    {isOwned ? <><i className="fa-solid fa-check"></i> 已解鎖</> : !canAfford ? <><i className="fa-solid fa-lock"></i> 金幣不足</> : <><i className="fa-solid fa-unlock"></i> 解鎖外觀</>}
-                                                </button>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
         const App = () => {
             const [currentClassId, setCurrentClassId] = useState(null); 
             const [view, setView] = useState('dashboard'); 
@@ -1407,9 +1370,11 @@
             const [shopBuyerId, setShopBuyerId] = useState(null); 
             const [editingAvatarId, setEditingAvatarId] = useState(null);
             
-            // ★ 新增：魔王戰資料持久化
             const [squadBosses, setSquadBosses] = useState({});
             const [guildBoss, setGuildBoss] = useState(null);
+            
+            // ★ 新增：紀律處分項目狀態
+            const [penaltyItems, setPenaltyItems] = useState([]);
 
             useEffect(() => {
                 const savedClasses = localStorage.getItem('guild_classes');
@@ -1418,6 +1383,7 @@
                 const savedLogs = localStorage.getItem('guild_logs');
                 const savedSquadBosses = localStorage.getItem('guild_squad_bosses');
                 const savedGuildBoss = localStorage.getItem('guild_guild_boss');
+                const savedPenaltyItems = localStorage.getItem('guild_penalty_items');
                 
                 if (savedClasses && savedStudents && savedGroups) {
                     setClasses(JSON.parse(savedClasses));
@@ -1452,10 +1418,13 @@
                     
                     if (savedSquadBosses) setSquadBosses(JSON.parse(savedSquadBosses));
                     if (savedGuildBoss) setGuildBoss(JSON.parse(savedGuildBoss));
+                    if (savedPenaltyItems) setPenaltyItems(JSON.parse(savedPenaltyItems));
+                    else setPenaltyItems(INITIAL_PENALTY_ITEMS);
                 } else {
                     setClasses(INITIAL_CLASSES);
                     setStudents(INITIAL_STUDENTS);
                     setGroups(INITIAL_GROUPS);
+                    setPenaltyItems(INITIAL_PENALTY_ITEMS);
                 }
             }, []);
 
@@ -1467,8 +1436,9 @@
                     localStorage.setItem('guild_logs', JSON.stringify(logs));
                     localStorage.setItem('guild_squad_bosses', JSON.stringify(squadBosses));
                     localStorage.setItem('guild_guild_boss', JSON.stringify(guildBoss));
+                    localStorage.setItem('guild_penalty_items', JSON.stringify(penaltyItems));
                 }
-            }, [classes, students, groups, logs, squadBosses, guildBoss]);
+            }, [classes, students, groups, logs, squadBosses, guildBoss, penaltyItems]);
 
             const addLog = (msg, targetClassId = currentClassId) => {
                 const time = new Date().toLocaleTimeString('zh-TW', { hour12: false });
@@ -1748,6 +1718,52 @@
                 setGroups(updatedGroups);
             };
 
+            // ★ 新增：紀律處罰執行邏輯 (扣分與降級)
+            const handleApplyPenalty = (studentId, penaltyId) => {
+                let updatedStudents = [...students];
+                let updatedGroups = [...groups];
+                let sIndex = updatedStudents.findIndex(s => s.id === parseInt(studentId));
+                if(sIndex === -1) return;
+
+                let student = { ...updatedStudents[sIndex] };
+                let gIndex = updatedGroups.findIndex(g => g.id === student.groupId);
+                const penaltyItem = penaltyItems.find(p => p.id === penaltyId);
+                if(!penaltyItem) return;
+
+                const pts = penaltyItem.points;
+                student.exp -= pts;
+
+                // 檢查是否需要降級
+                while(student.exp < 0 && student.level > 1) {
+                    student.level -= 1;
+                    student.maxHp -= 5;
+                    student.exp += getExpReq(student.level);
+                }
+                if (student.exp < 0) student.exp = 0; // 1級扣到負數時歸零
+                
+                // 血量上限若因降級而縮減，需調整當前血量
+                const synergy = getGroupSynergy(student.groupId, updatedStudents);
+                const effMaxHp = student.maxHp + synergy.hpBonus;
+                if (student.hp > effMaxHp) student.hp = effMaxHp;
+
+                updatedStudents[sIndex] = student;
+                if(gIndex !== -1) updatedGroups[gIndex].score = Math.max(0, updatedGroups[gIndex].score - pts);
+
+                setStudents(updatedStudents);
+                setGroups(updatedGroups);
+
+                addLog(`⚖️ 紀律裁決：${student.name} 因為【${penaltyItem.name}】被扣除了 ${pts} 總分！`, student.classId);
+            };
+
+            const handleAddPenaltyItem = (name, points) => {
+                const newItem = { id: Date.now(), name, points: parseInt(points) };
+                setPenaltyItems([...penaltyItems, newItem]);
+            };
+
+            const handleDeletePenaltyItem = (id) => {
+                setPenaltyItems(penaltyItems.filter(i => i.id !== id));
+            };
+
             const changeJob = (studentId, newJob) => {
                 let updated = [...students];
                 let sIndex = updated.findIndex(s => s.id === studentId);
@@ -1874,7 +1890,7 @@
                     let maxId = prev.length > 0 ? Math.max(...prev.map(s => s.id)) : 0;
                     const newStudents = names.map((name, i) => ({
                         id: maxId + i + 1, classId: parseInt(classId), groupId: parseInt(groupId), 
-                        name, level: 1, exp: 0, gold: 50, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar(name)
+                        name, level: 1, exp: 0, gold: 0, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar(name)
                     }));
                     return [...prev, ...newStudents];
                 });
@@ -1891,9 +1907,12 @@
             const getClassObj = (id) => classes.find(c => c.id === id);
 
             if (currentClassId === null) {
+                // ★ 世界地圖視圖
+                const worldLogs = logs.filter(l => l.classId === null);
+
                 return (
-                    <div className="min-h-screen flex items-center justify-center p-4 relative z-10 animate-fade-in">
-                        <div className="panel p-8 md:p-12 max-w-4xl w-full text-center shadow-[0_0_50px_rgba(197,159,68,0.15)]">
+                    <div className="min-h-screen flex items-center justify-center p-4 relative z-10 animate-fade-in flex-col">
+                        <div className="panel p-8 md:p-12 max-w-4xl w-full text-center shadow-[0_0_50px_rgba(197,159,68,0.15)] mb-8">
                             <i className="fa-solid fa-dragon text-6xl text-guild-gold mb-4"></i>
                             <h1 className="text-4xl font-bold text-guild-gold mb-2 tracking-widest">自然科學冒險者公會</h1>
                             <p className="text-guild-paper/70 mb-10 text-lg">世界地圖 - 請選擇您要進入的分會大廳</p>
@@ -1918,6 +1937,17 @@
                                 <button onClick={() => { setCurrentClassId('admin'); setView('admin'); }} className="text-gray-500 hover:text-guild-gold transition text-sm flex items-center justify-center w-full">
                                     <i className="fa-solid fa-gear mr-2"></i> 進入教師辦公室 (管理後台)
                                 </button>
+                            </div>
+                        </div>
+
+                        {/* ★ 世界紀錄簿 */}
+                        <div className="panel p-6 max-w-4xl w-full text-left bg-black/60 border border-gray-700 shadow-xl">
+                            <h3 className="text-xl text-guild-gold mb-4 font-bold tracking-widest"><i className="fa-solid fa-globe mr-2"></i>世界紀錄簿 (全系統公告)</h3>
+                            <div className="text-sm space-y-2 h-40 overflow-y-auto pr-2 opacity-80 font-mono custom-scrollbar">
+                                {worldLogs.map((log, i) => (
+                                    <div key={i} className="border-b border-gray-700/50 pb-2 mb-2 last:border-0"><span className="text-gray-500 mr-2">[{log.time}]</span> <span className="text-gray-300">{log.msg}</span></div>
+                                ))}
+                                {worldLogs.length === 0 && <div className="text-gray-500 text-center py-8">這個世界目前非常平靜，尚未有任何重大事件發生。</div>}
                             </div>
                         </div>
                     </div>
@@ -1964,7 +1994,7 @@
                     <main className="flex-1 p-4 md:p-8 overflow-y-auto">
                         {view === 'admin' && <AdminPanel students={students} classes={classes} onApprove={handleApproveCustomAvatar} onReject={handleRejectCustomAvatar} onArchiveClass={handleArchiveClass} onDeleteClass={handleDeleteClass} />}
                         {view === 'dashboard' && <Dashboard classId={currentClassId} groups={groups} students={students} logs={logs} />}
-                        {view === 'roster' && <Roster classId={currentClassId} groups={groups} students={students} getGroup={getGroup} onOpenShop={setShopBuyerId} onOpenAvatarEditor={setEditingAvatarId} onAddGroup={handleAddGroup} onAddStudent={handleAddStudent} />}
+                        {view === 'roster' && <Roster classId={currentClassId} groups={groups} students={students} getGroup={getGroup} onOpenShop={setShopBuyerId} onOpenAvatarEditor={setEditingAvatarId} onAddGroup={handleAddGroup} onAddStudent={handleAddStudent} penaltyItems={penaltyItems} onAddPenaltyItem={handleAddPenaltyItem} onDeletePenaltyItem={handleDeletePenaltyItem} onApplyPenalty={handleApplyPenalty} />}
                         {view === 'quest' && <QuestBoard classId={currentClassId} students={students} groups={groups} squadBosses={squadBosses} guildBoss={guildBoss} onResult={handleQuestResult} onSpawnBoss={handleSpawnBoss} onBossAttack={handleBossAttack} />}
                     </main>
 
@@ -1972,7 +2002,6 @@
                     {shopBuyerId && <Shop buyer={students.find(s => s.id === shopBuyerId)} onBuy={buyItem} onClose={() => setShopBuyerId(null)} />}
                     {editingAvatarId && <AvatarEditor student={students.find(s => s.id === editingAvatarId)} onSave={saveAvatar} onClose={() => setEditingAvatarId(null)} />}
                     
-                    {/* ★ 轉職視窗 (買卡後觸發) */}
                     {showJobModal && (
                         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
                             <div className="panel p-6 max-w-5xl w-full text-center border-guild-gold shadow-[0_0_40px_rgba(197,159,68,0.4)]">
