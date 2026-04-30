@@ -146,6 +146,59 @@
         const { useState, useEffect, useRef } = React;
         const apiKey = ""; 
 
+        // --- ★ 音效控制系統 (Web Audio API) ---
+        let audioCtx = null;
+        const playAudio = (type) => {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                const now = audioCtx.currentTime;
+                
+                if (type === 'attack') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(300, now);
+                    osc.frequency.exponentialRampToValueAtTime(50, now + 0.1);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+                    osc.start(now); osc.stop(now + 0.15);
+                } else if (type === 'damage') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(150, now);
+                    osc.frequency.exponentialRampToValueAtTime(40, now + 0.3);
+                    gain.gain.setValueAtTime(0.5, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                    osc.start(now); osc.stop(now + 0.3);
+                } else if (type === 'coin') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(1000, now);
+                    osc.frequency.exponentialRampToValueAtTime(2000, now + 0.1);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+                    osc.start(now); osc.stop(now + 0.2);
+                } else if (type === 'penalty') {
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(100, now);
+                    osc.frequency.linearRampToValueAtTime(60, now + 0.4);
+                    gain.gain.setValueAtTime(0.4, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.4);
+                    osc.start(now); osc.stop(now + 0.4);
+                } else if (type === 'win') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(400, now);
+                    osc.frequency.linearRampToValueAtTime(600, now + 0.1);
+                    osc.frequency.linearRampToValueAtTime(800, now + 0.2);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.4);
+                    osc.start(now); osc.stop(now + 0.4);
+                }
+            } catch(e) { console.error('音效播放失敗', e); }
+        };
+
         const fetchWithRetry = async (url, options, retries = 5) => {
             const delays = [1000, 2000, 4000, 8000, 16000];
             for (let i = 0; i < retries; i++) {
@@ -217,28 +270,53 @@
         const AVATAR_OPTIONS = {
             skinColor: [ { id: 'ffe0bd', name: '人類 (透白)' }, { id: 'f2d3b1', name: '人類 (白皙)' }, { id: 'e6c19c', name: '人類 (自然)' }, { id: 'd4a373', name: '人類 (小麥)' }, { id: 'c68642', name: '人類 (古銅)' }, { id: '8d5524', name: '人類 (深棕)' }, { id: '4a2e1b', name: '人類 (黑曜)' }, { id: 'fcf8ff', name: '高精靈 (月光白)' }, { id: 'e0e7ff', name: '水精靈 (星空藍)' }, { id: 'f3e8ff', name: '光精靈 (晨曦紫)' }, { id: 'd8b4fe', name: '暗精靈 (魅惑紫)' }, { id: 'a7f3d0', name: '森精靈 (嫩葉綠)' }, { id: '86efac', name: '半獸人 (翠綠)' }, { id: 'fca5a5', name: '魔族 (烈焰紅)' }, { id: 'd1d5db', name: '亡靈 (蒼灰)' }, { id: 'fef08a', name: '神族 (耀金)' } ],
             hairColor: [ { id: '111111', name: '深邃黑' }, { id: '5c3a21', name: '原木棕' }, { id: 'fbbf24', name: '耀眼金' }, { id: 'ef4444', name: '烈焰紅' }, { id: 'f8fafc', name: '蒼霜白' }, { id: 'a855f7', name: '秘法紫' }, { id: 'ec4899', name: '櫻花粉' }, { id: '3b82f6', name: '冰霜藍' } ],
-            head: genOpts('variant', 12, '臉型'), hair: genOpts('variant', 35, '髮型'), eyes: genOpts('variant', 14, '眼睛'), eyebrows: genOpts('variant', 12, '眉毛'), mouth: genOpts('happy', 14, '嘴巴'),
-            glasses: [ { id: 'none', name: '無眼鏡' }, ...genOpts('variant', 5, '眼鏡') ], freckles: [ { id: '0', name: '乾淨無瑕' }, { id: '100', name: '點點雀斑' } ],
+            head: genOpts('variant', 12, '臉型'), 
+            hair: genOpts('variant', 35, '髮型'), 
+            eyes: genOpts('variant', 14, '眼睛'), 
+            eyebrows: genOpts('variant', 12, '眉毛'), 
+            mouth: genOpts('happy', 14, '嘴巴'),
+            glasses: [ { id: 'none', name: '無眼鏡' }, ...genOpts('variant', 5, '眼鏡') ], 
+            freckles: [ { id: '0', name: '乾淨無瑕' }, { id: '100', name: '點點雀斑' } ],
             frames: [ { id: 'border-gray-500', name: '預設鐵框' }, { id: 'border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.8)]', name: '聖騎黃金外框' }, { id: 'border-purple-600 shadow-[0_0_20px_rgba(147,51,234,0.8)]', name: '深淵魔氣外框' }, { id: 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.8)]', name: '精靈流光外框' } ]
         };
 
-        const defaultAvatar = (name) => ({ seed: name, skinColor: 'f2d3b1', hairColor: '111111', head: 'variant01', hair: 'variant01', eyes: 'variant01', eyebrows: 'variant01', mouth: 'happy01', glasses: 'none', freckles: '0', frameClass: 'border-gray-500', unlockedFrames: ['border-gray-500'], customImage: null, customImageStatus: 'none' });
+        const defaultAvatar = (name, rollNo = 1) => {
+            let isBoy = true;
+            let modNo = rollNo % 30;
+            if (modNo === 0) modNo = 30; 
+            
+            // 規則：1~14 男生，15~28 女生 (29,30預設回男生)
+            if (modNo >= 15 && modNo <= 28) isBoy = false;
+            
+            const boyHairs = ['variant01', 'variant02', 'variant05', 'variant06', 'variant07', 'variant10', 'variant13'];
+            const girlHairs = ['variant03', 'variant04', 'variant08', 'variant09', 'variant11', 'variant12', 'variant15', 'variant22', 'variant25'];
+            
+            const hair = isBoy ? boyHairs[Math.floor(Math.random() * boyHairs.length)] : girlHairs[Math.floor(Math.random() * girlHairs.length)];
+
+            return { 
+                seed: name, skinColor: 'f2d3b1', hairColor: '111111', head: 'variant01', 
+                hair: hair, eyes: 'variant01', eyebrows: 'variant01', mouth: 'happy01', 
+                glasses: 'none', freckles: '0', frameClass: 'border-gray-500', 
+                unlockedFrames: ['border-gray-500'], customImage: null, customImageStatus: 'none' 
+            };
+        };
 
         const INITIAL_CLASSES = [ { id: 1, name: '701班' }, { id: 2, name: '702班' } ];
         const INITIAL_GROUPS = [ { id: 1, classId: 1, name: '獅鷲小隊', score: 0 }, { id: 2, classId: 1, name: '獨角獸小隊', score: 0 }, { id: 3, classId: 2, name: '鳳凰小隊', score: 0 } ];
         
         const INITIAL_STUDENTS = [
-            { id: 1, classId: 1, name: '亞瑟', groupId: 1, level: 1, exp: 0, gold: 0, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Arthur') },
-            { id: 2, classId: 1, name: '梅林', groupId: 1, level: 1, exp: 0, gold: 0, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Merlin') },
-            { id: 3, classId: 1, name: '羅賓', groupId: 2, level: 1, exp: 0, gold: 0, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Robin') },
-            { id: 4, classId: 2, name: '貞德', groupId: 3, level: 1, exp: 0, gold: 0, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Jeanne') },
+            { id: 1, classId: 1, name: '亞瑟', pin: '0000', groupId: 1, level: 1, exp: 0, gold: 0, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Arthur', 1) },
+            { id: 2, classId: 1, name: '梅林', pin: '0000', groupId: 1, level: 1, exp: 0, gold: 0, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Merlin', 2) },
+            { id: 3, classId: 1, name: '羅賓', pin: '0000', groupId: 2, level: 1, exp: 0, gold: 0, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Robin', 3) },
+            { id: 4, classId: 2, name: '貞德', pin: '0000', groupId: 3, level: 1, exp: 0, gold: 0, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar('Jeanne', 15) },
         ];
 
-        const INITIAL_PENALTY_ITEMS = [
-            { id: 1, name: '未交作業', points: 20 },
-            { id: 2, name: '上課吵鬧', points: 10 },
-            { id: 3, name: '遲到早退', points: 15 },
-            { id: 4, name: '破壞秩序', points: 30 }
+        // ★ 更新：規則項目分為 'reward' (獎勵) 與 'penalty' (懲罰)
+        const INITIAL_RULE_ITEMS = [
+            { id: 1, type: 'penalty', name: '未交作業', exp: 20, gold: 0 },
+            { id: 2, type: 'penalty', name: '上課吵鬧', exp: 10, gold: 0 },
+            { id: 3, type: 'reward', name: '熱心助人', exp: 30, gold: 10 },
+            { id: 4, type: 'reward', name: '完美作業', exp: 50, gold: 20 }
         ];
 
         const getGroupSynergy = (groupId, allStudents) => {
@@ -428,29 +506,38 @@
             );
         };
 
-        const Roster = ({ classId, groups, students, getGroup, onOpenShop, onOpenAvatarEditor, onAddGroup, onAddStudent, penaltyItems, onAddPenaltyItem, onDeletePenaltyItem, onApplyPenalty }) => {
+        const Roster = ({ classId, groups, students, getGroup, onOpenShop, onAddGroup, onAddStudent, ruleItems, onAddRuleItem, onDeleteRuleItem, onApplyRule }) => {
             const [showManageModal, setShowManageModal] = useState(false);
             const [manageTab, setManageTab] = useState('student'); 
             const [newGroupName, setNewGroupName] = useState('');
             const [newStudentName, setNewStudentName] = useState('');
             const [newStudentGroupId, setNewStudentGroupId] = useState('');
             
-            const [showPenaltyModal, setShowPenaltyModal] = useState(false);
-            const [selectedPenaltyStudentId, setSelectedPenaltyStudentId] = useState('');
-            const [selectedPenaltyId, setSelectedPenaltyId] = useState('');
-            const [newPName, setNewPName] = useState('');
-            const [newPPts, setNewPPts] = useState('');
+            // ★ 更新：獎懲處分系統
+            const [showRuleModal, setShowRuleModal] = useState(false);
+            const [ruleTab, setRuleTab] = useState('reward'); 
+            const [selectedRuleStudentId, setSelectedRuleStudentId] = useState('');
+            const [selectedRuleId, setSelectedRuleId] = useState('');
+            const [newRName, setNewRName] = useState('');
+            const [newRExp, setNewRExp] = useState('');
+            const [newRGold, setNewRGold] = useState('');
 
             const branchStudents = students.filter(s => s.classId === classId);
             const branchGroups = groups.filter(g => g.classId === classId);
+            
+            const handleResetPin = (studentId) => {
+                if(!confirm('確定要將此學生的密碼重置為 0000 嗎？')) return;
+                // 這裡我們把重置事件發送給上層 (其實直接寫在裡面也可以，但為求乾淨我們就在這裡做一個 event)
+                window.dispatchEvent(new CustomEvent('reset-pin', { detail: studentId }));
+            };
 
             return (
                 <div className="max-w-7xl mx-auto animate-fade-in">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-guild-gold/30 pb-4 mb-6 gap-4">
                         <h2 className="text-3xl font-bold text-guild-gold">冒險者名冊</h2>
                         <div className="flex gap-2">
-                            <button onClick={() => setShowPenaltyModal(true)} className="px-4 py-2 bg-red-900 hover:bg-red-800 text-white font-bold rounded border border-red-700 transition shadow flex items-center">
-                                <i className="fa-solid fa-gavel mr-2"></i> 紀律裁決
+                            <button onClick={() => setShowRuleModal(true)} className="px-4 py-2 bg-gradient-to-r from-green-800 to-red-900 hover:from-green-700 hover:to-red-800 text-white font-bold rounded transition shadow flex items-center border border-gray-500">
+                                <i className="fa-solid fa-scale-balanced mr-2"></i> 獎懲與紀律
                             </button>
                             <button onClick={() => setShowManageModal(true)} className="px-4 py-2 bg-blue-900 hover:bg-blue-800 text-white font-bold rounded border border-blue-600 transition shadow flex items-center">
                                 <i className="fa-solid fa-user-plus mr-2"></i> 招募與編制
@@ -470,7 +557,7 @@
                                 <div key={s.id} className="panel p-4 relative overflow-hidden group hover:border-guild-gold/50 transition">
                                     {s.hp <= 0 && <div className="absolute inset-0 bg-red-900/50 flex items-center justify-center z-20 font-bold text-xl text-red-200 backdrop-blur-sm">已陣亡</div>}
                                     <div className="flex gap-4 items-start mb-3">
-                                        <div className="cursor-pointer transform hover:scale-105 transition" onClick={() => onOpenAvatarEditor(s.id)} title="點擊開啟換裝室">
+                                        <div className="transform transition">
                                             <AvatarDisplay student={s} size="w-16 h-16" />
                                         </div>
                                         <div className="flex-1 min-w-0">
@@ -483,7 +570,10 @@
                                                     </div>
                                                 )}
                                             </div>
-                                            <div className="text-lg font-bold flex items-center justify-between"><span className="truncate">{s.name}</span><span className="text-sm font-bold text-guild-paper">Lv.{s.level}</span></div>
+                                            <div className="text-lg font-bold flex items-center justify-between">
+                                                <span className="truncate">{s.name}</span>
+                                                <span className="text-sm font-bold text-guild-paper">Lv.{s.level}</span>
+                                            </div>
                                             <div className="text-xs text-gray-400 mt-0.5">{s.job}</div>
                                         </div>
                                     </div>
@@ -504,7 +594,7 @@
                                             </span>
                                         </div>
                                         <button onClick={() => onOpenShop(s.id)} className="mt-3 w-full py-2 bg-guild-dark hover:bg-guild-gold hover:text-guild-dark text-guild-paper border border-gray-600 hover:border-guild-gold rounded text-xs transition font-bold">
-                                            <i className="fa-solid fa-store mr-1"></i> 進入商行
+                                            <i className="fa-solid fa-store mr-1"></i> 教師代開商行
                                         </button>
                                     </div>
                                 </div>
@@ -513,57 +603,71 @@
                         {branchStudents.length === 0 && <div className="col-span-full text-center py-16 text-gray-500 bg-guild-dark rounded border border-dashed border-gray-700">這裡目前空無一人，趕快點擊右上角「招募與編制」來增加冒險者吧！</div>}
                     </div>
 
-                    {/* 紀律裁決 Modal */}
-                    {showPenaltyModal && (
+                    {/* ★ 獎勵與懲罰 Modal */}
+                    {showRuleModal && (
                         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-                            <div className="panel p-0 max-w-2xl w-full flex flex-col relative border-red-700 overflow-hidden shadow-[0_0_30px_rgba(185,28,28,0.3)]">
-                                <button onClick={() => {setShowPenaltyModal(false); setSelectedPenaltyStudentId(''); setSelectedPenaltyId('');}} className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl transition hover:rotate-90 z-10"><i className="fa-solid fa-xmark"></i></button>
-                                <div className="p-6 border-b border-red-900/50 bg-red-950/30">
-                                    <h2 className="text-2xl font-bold text-red-500"><i className="fa-solid fa-gavel mr-2"></i>紀律裁決 (扣除總分)</h2>
-                                    <p className="text-red-200/70 text-sm mt-1">執行公會紀律，扣除冒險者經驗值(總分)。若經驗值歸零將會自動降級。</p>
+                            <div className={`panel p-0 max-w-2xl w-full flex flex-col relative overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)] ${ruleTab === 'reward' ? 'border-green-600' : 'border-red-700'}`}>
+                                <button onClick={() => {setShowRuleModal(false); setSelectedRuleStudentId(''); setSelectedRuleId('');}} className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl transition hover:rotate-90 z-10"><i className="fa-solid fa-xmark"></i></button>
+                                
+                                <div className="flex border-b border-gray-700/50 bg-guild-dark">
+                                    <button onClick={() => {setRuleTab('reward'); setSelectedRuleId('');}} className={`flex-1 py-4 font-bold transition flex items-center justify-center ${ruleTab === 'reward' ? 'bg-green-900/40 text-green-400 border-b-2 border-green-500' : 'text-gray-500 hover:text-gray-300'}`}><i className="fa-solid fa-gift mr-2"></i> 頒發獎勵</button>
+                                    <button onClick={() => {setRuleTab('penalty'); setSelectedRuleId('');}} className={`flex-1 py-4 font-bold transition flex items-center justify-center ${ruleTab === 'penalty' ? 'bg-red-900/40 text-red-500 border-b-2 border-red-500' : 'text-gray-500 hover:text-gray-300'}`}><i className="fa-solid fa-gavel mr-2"></i> 紀律處分</button>
                                 </div>
+
                                 <div className="p-6 bg-guild-panel flex flex-col gap-6">
-                                    <div>
-                                        <label className="block text-sm text-guild-paper mb-2 font-bold">1. 選擇要處分的冒險者</label>
-                                        <select value={selectedPenaltyStudentId} onChange={e => setSelectedPenaltyStudentId(e.target.value)} className="w-full p-3 bg-guild-dark border border-gray-600 rounded text-guild-paper focus:outline-none focus:border-red-500">
-                                            <option value="">-- 請選擇冒險者 --</option>
-                                            {branchStudents.map(s => <option key={s.id} value={s.id}>{s.name} (Lv.{s.level} - 總分:{(s.level-1)*1000 + s.exp})</option>)}
-                                        </select>
+                                    <div className="flex items-end gap-2">
+                                        <div className="flex-1">
+                                            <label className="block text-sm text-guild-paper mb-2 font-bold">1. 選擇指定的冒險者</label>
+                                            <select value={selectedRuleStudentId} onChange={e => setSelectedRuleStudentId(e.target.value)} className="w-full p-3 bg-guild-dark border border-gray-600 rounded text-guild-paper focus:outline-none">
+                                                <option value="">-- 請選擇冒險者 --</option>
+                                                {branchStudents.map(s => <option key={s.id} value={s.id}>{s.name} (Lv.{s.level})</option>)}
+                                            </select>
+                                        </div>
+                                        {selectedRuleStudentId && (
+                                            <button onClick={() => handleResetPin(selectedRuleStudentId)} className="p-3 bg-gray-700 hover:bg-gray-600 text-xs text-white rounded transition shadow" title="學生忘記密碼時使用">重置密碼為 0000</button>
+                                        )}
                                     </div>
+
                                     <div>
-                                        <label className="block text-sm text-guild-paper mb-2 font-bold">2. 選擇違規項目</label>
+                                        <label className="block text-sm text-guild-paper mb-2 font-bold">2. 選擇 {ruleTab === 'reward' ? '獎勵' : '違規'} 項目</label>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-40 overflow-y-auto custom-scrollbar pr-2">
-                                            {penaltyItems.map(item => (
-                                                <div key={item.id} onClick={() => setSelectedPenaltyId(item.id)} className={`panel p-3 border cursor-pointer relative transition ${selectedPenaltyId === item.id ? 'border-red-500 bg-red-900/30 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'border-gray-600 hover:border-red-400/50 bg-guild-dark/50'}`}>
-                                                    <div className="font-bold text-guild-paper text-sm pr-6">{item.name}</div>
-                                                    <div className="text-red-400 font-bold mt-1">- {item.points} EXP</div>
-                                                    <button onClick={(e) => { e.stopPropagation(); onDeletePenaltyItem(item.id); }} className="absolute top-2 right-2 text-gray-500 hover:text-red-500 transition"><i className="fa-solid fa-trash"></i></button>
+                                            {ruleItems.filter(i => i.type === ruleTab).map(item => (
+                                                <div key={item.id} onClick={() => setSelectedRuleId(item.id)} className={`panel p-3 border cursor-pointer relative transition ${selectedRuleId === item.id ? (ruleTab==='reward' ? 'border-green-500 bg-green-900/30' : 'border-red-500 bg-red-900/30') : 'border-gray-600 hover:border-gray-400 bg-guild-dark/50'}`}>
+                                                    <div className="font-bold text-guild-paper text-sm pr-6 truncate">{item.name}</div>
+                                                    <div className={`font-bold mt-1 ${ruleTab === 'reward' ? 'text-green-400' : 'text-red-400'}`}>
+                                                        {ruleTab === 'reward' ? '+' : '-'} {item.exp} EXP
+                                                        {item.gold > 0 && <span className="ml-2 text-yellow-500 text-xs">+{item.gold} G</span>}
+                                                    </div>
+                                                    <button onClick={(e) => { e.stopPropagation(); onDeleteRuleItem(item.id); }} className="absolute top-2 right-2 text-gray-500 hover:text-red-500 transition"><i className="fa-solid fa-trash"></i></button>
                                                 </div>
                                             ))}
+                                            {ruleItems.filter(i => i.type === ruleTab).length === 0 && <div className="col-span-full text-gray-500 text-sm">尚未建立項目，請在下方新增。</div>}
                                         </div>
                                     </div>
+
                                     <div className="border-t border-gray-700 pt-4">
-                                        <label className="block text-sm text-gray-400 mb-2">自訂新增違規項目</label>
-                                        <div className="flex gap-2">
-                                            <input type="text" placeholder="項目名稱 (例: 未交作業)" value={newPName} onChange={e=>setNewPName(e.target.value)} className="flex-1 p-2 bg-guild-dark border border-gray-600 rounded text-white text-sm focus:outline-none" />
-                                            <input type="number" placeholder="扣除分數" value={newPPts} onChange={e=>setNewPPts(e.target.value)} className="w-24 p-2 bg-guild-dark border border-gray-600 rounded text-white text-sm focus:outline-none" />
-                                            <button onClick={() => { if(newPName && newPPts){ onAddPenaltyItem(newPName, newPPts); setNewPName(''); setNewPPts(''); } }} className="px-4 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm font-bold transition">新增</button>
+                                        <label className="block text-sm text-gray-400 mb-2">自訂新增 {ruleTab === 'reward' ? '獎勵' : '違規'} 項目</label>
+                                        <div className="flex flex-wrap gap-2">
+                                            <input type="text" placeholder="項目名稱" value={newRName} onChange={e=>setNewRName(e.target.value)} className="flex-1 p-2 bg-guild-dark border border-gray-600 rounded text-white text-sm focus:outline-none min-w-[150px]" />
+                                            <input type="number" placeholder="EXP (分數)" value={newRExp} onChange={e=>setNewRExp(e.target.value)} className="w-24 p-2 bg-guild-dark border border-gray-600 rounded text-white text-sm focus:outline-none" />
+                                            {ruleTab === 'reward' && <input type="number" placeholder="Gold (金幣)" value={newRGold} onChange={e=>setNewRGold(e.target.value)} className="w-24 p-2 bg-guild-dark border border-gray-600 rounded text-white text-sm focus:outline-none" />}
+                                            <button onClick={() => { if(newRName && newRExp){ onAddRuleItem(ruleTab, newRName, newRExp, newRGold||0); setNewRName(''); setNewRExp(''); setNewRGold(''); } }} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm font-bold transition">新增</button>
                                         </div>
                                     </div>
                                 </div>
-                                <div className="p-4 border-t border-red-900/50 bg-guild-dark">
+                                <div className={`p-4 border-t bg-guild-dark ${ruleTab === 'reward' ? 'border-green-900/50' : 'border-red-900/50'}`}>
                                     <button 
                                         onClick={() => {
-                                            if(!selectedPenaltyStudentId || !selectedPenaltyId) return alert("請選擇冒險者與違規項目！");
-                                            onApplyPenalty(selectedPenaltyStudentId, selectedPenaltyId);
-                                            setShowPenaltyModal(false);
-                                            setSelectedPenaltyStudentId('');
-                                            setSelectedPenaltyId('');
+                                            if(!selectedRuleStudentId || !selectedRuleId) return alert("請選擇冒險者與項目！");
+                                            onApplyRule(selectedRuleStudentId, selectedRuleId);
+                                            setShowRuleModal(false);
+                                            setSelectedRuleStudentId('');
+                                            setSelectedRuleId('');
                                         }} 
-                                        disabled={!selectedPenaltyStudentId || !selectedPenaltyId} 
-                                        className="w-full py-4 bg-red-800 hover:bg-red-700 disabled:bg-gray-800 disabled:text-gray-500 text-white font-extrabold rounded shadow-lg transition text-lg"
+                                        disabled={!selectedRuleStudentId || !selectedRuleId} 
+                                        className={`w-full py-4 text-white font-extrabold rounded shadow-lg transition text-lg flex items-center justify-center disabled:bg-gray-800 disabled:text-gray-500 ${ruleTab === 'reward' ? 'bg-green-800 hover:bg-green-700' : 'bg-red-800 hover:bg-red-700'}`}
                                     >
-                                        <i className="fa-solid fa-bolt mr-2"></i> 執行裁決
+                                        <i className={`fa-solid ${ruleTab === 'reward' ? 'fa-gift' : 'fa-bolt'} mr-2`}></i> {ruleTab === 'reward' ? '確認頒發獎勵' : '執行紀律裁決'}
                                     </button>
                                 </div>
                             </div>
@@ -600,7 +704,7 @@
                                                 </select>
                                             </div>
                                             <div>
-                                                <label className="block text-sm text-guild-paper mb-1">冒險者姓名 <span className="text-gray-500 text-xs">(支援批次，請用逗號或換行分隔)</span></label>
+                                                <label className="block text-sm text-guild-paper mb-1">冒險者姓名 <span className="text-gray-500 text-xs">(支援批次，將依序1~14派發男生頭像，15~28女生頭像)</span></label>
                                                 <textarea rows="3" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} placeholder="例如：亞瑟, 梅林, 羅賓..." className="w-full p-3 bg-guild-dark border border-guild-gold/50 rounded text-guild-paper focus:outline-none custom-scrollbar" />
                                             </div>
                                             <button onClick={()=>{onAddStudent(newStudentName, classId, newStudentGroupId); setNewStudentName('');}} className="w-full py-3 mt-4 bg-blue-800 hover:bg-blue-700 text-white font-bold rounded transition">招募</button>
@@ -936,24 +1040,46 @@
             const handleGenerateAI = async () => {
                 if (!aiTopic.trim()) return;
                 setIsGenerating(true); setAiData(null); setDrawnMonster(null); setCombatAnim({ student: '', monster: '' }); setAiResultText(null);
-                const prompt = `請根據自然科學或相關學科主題「${aiTopic}」出一個單選題，並設計一隻與此主題相關的奇幻魔物。
-                請以 JSON 格式回傳，必須嚴格包含以下欄位：
-                {
-                  "question": "題目內容",
-                  "options": ["選項A", "選項B", "選項C", "選項D"],
-                  "answerIndex": 0,
-                  "explanation": "正確解答的詳解",
-                  "monster": {
-                     "id": "ai_monster", "name": "魔物名稱", "diff": "AI特製", "exp": 150, "gold": 80, "dmg": 15, "icon": "fa-bug", "color": "text-purple-500"
-                  }
-                }`;
+                const prompt = `請根據自然科學或相關學科主題「${aiTopic}」出一個單選題，並設計一隻與此主題相關的奇幻魔物。魔物的 icon 請使用 FontAwesome 格式 (例如 fa-ghost, fa-bug)，color 請使用 Tailwind 文字顏色 (例如 text-purple-500)。`;
+                
                 try {
-                    const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } };
+                    const payload = { 
+                        contents: [{ parts: [{ text: prompt }] }], 
+                        generationConfig: { 
+                            responseMimeType: "application/json",
+                            responseSchema: {
+                                type: "OBJECT",
+                                properties: {
+                                    question: { type: "STRING" },
+                                    options: { type: "ARRAY", items: { type: "STRING" } },
+                                    answerIndex: { type: "INTEGER" },
+                                    explanation: { type: "STRING" },
+                                    monster: {
+                                        type: "OBJECT",
+                                        properties: {
+                                            id: { type: "STRING" },
+                                            name: { type: "STRING" },
+                                            diff: { type: "STRING" },
+                                            exp: { type: "INTEGER" },
+                                            gold: { type: "INTEGER" },
+                                            dmg: { type: "INTEGER" },
+                                            icon: { type: "STRING" },
+                                            color: { type: "STRING" }
+                                        },
+                                        required: ["id", "name", "diff", "exp", "gold", "dmg", "icon", "color"]
+                                    }
+                                },
+                                required: ["question", "options", "answerIndex", "explanation", "monster"]
+                            }
+                        } 
+                    };
                     const res = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
                         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
                     });
-                    let text = res.candidates?.[0]?.content?.parts?.[0]?.text;
-                    text = text.replace(/```json\n?/g, '').replace(/```/g, '').trim();
+                    
+                    const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!text) throw new Error("API 未回傳內容");
+                    
                     const data = JSON.parse(text);
                     setAiData(data); setDrawnMonster(data.monster);
                 } catch (error) {
@@ -1042,6 +1168,7 @@
 
                     setCombatAnim({ student: 'anim-attack-right', monster: '' });
                     setTimeout(() => {
+                        playAudio('attack'); 
                         setVfx({ student: null, monster: jobType, studentLevel: student.level }); 
                         setCombatAnim({ student: '', monster: 'anim-shake-red' }); 
                         addFloatingText(isBossBattle ? `⚔️ ${damageDealtToBoss} 傷!` : '⚔️ 爆擊!', 'damage', 'monster');
@@ -1049,10 +1176,14 @@
                         setTimeout(() => {
                             setVfx({ student: null, monster: null, studentLevel: 1 }); 
                             setCombatAnim({ student: '', monster: 'anim-fade-out' });
+                            playAudio('win'); 
                             
                             if (!isBossBattle) {
                                 addFloatingText(`+${finalExp} EXP`, 'exp', 'student');
-                                setTimeout(() => addFloatingText(`+${finalGold} G`, 'gold', 'student'), 300);
+                                setTimeout(() => {
+                                    playAudio('coin'); 
+                                    addFloatingText(`+${finalGold} G`, 'gold', 'student');
+                                }, 300);
                             }
                             if (healAmt > 0) setTimeout(() => addFloatingText(`+${healAmt} HP`, 'heal', 'student'), 600);
 
@@ -1085,8 +1216,14 @@
 
                     setCombatAnim({ student: '', monster: 'anim-attack-left' });
                     setTimeout(() => {
+                        playAudio('attack'); 
                         setVfx({ student: 'monster', monster: null, studentLevel: 1 });
-                        if (!isDodged) setCombatAnim({ student: 'anim-shake-red', monster: '' });
+                        if (!isDodged) {
+                            setCombatAnim({ student: 'anim-shake-red', monster: '' });
+                            playAudio('damage'); 
+                        } else {
+                            playAudio('win'); 
+                        }
                         
                         if (isDodged) addFloatingText('💨 閃避!', 'heal', 'student');
                         else addFloatingText(`-${finalDmg} HP`, 'damage', 'student');
@@ -1348,9 +1485,127 @@
             );
         };
 
+        const Shop = ({ buyer, onBuy, onClose, students }) => {
+            if (!buyer) return null;
+            
+            // 這裡傳入 students 作為 prop 計算協同效果，避免使用 localStorage 導致與雲端不同步
+            const synergy = getGroupSynergy(buyer.groupId, students || []);
+            const effectiveMaxHp = buyer.maxHp + synergy.hpBonus;
+
+            return (
+                <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-4 z-50">
+                    <div className="panel p-6 max-w-6xl w-full max-h-[90vh] flex flex-col relative border-guild-gold shadow-[0_0_30px_rgba(197,159,68,0.3)]">
+                        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white text-3xl transition hover:rotate-90 z-10"><i className="fa-solid fa-xmark"></i></button>
+                        <h2 className="text-3xl font-bold text-guild-gold border-b border-guild-gold/30 pb-3 mb-6"><i className="fa-solid fa-store mr-2"></i>道具與武器商行</h2>
+                        <div className="flex flex-col md:flex-row gap-8 overflow-y-auto pr-2 custom-scrollbar">
+                            
+                            {/* 左側：冒險者屬性面板 */}
+                            <div className="md:w-1/3 shrink-0">
+                                <div className="bg-guild-dark p-6 rounded-lg border border-guild-gold/30 sticky top-0 shadow-lg flex flex-col items-center">
+                                    <AvatarDisplay student={buyer} size="w-32 h-32" />
+                                    <div className="text-guild-gold font-bold text-xl mt-4 mb-1">{buyer.name}</div>
+                                    <div className="text-sm text-gray-400 mb-4">Lv.{buyer.level} {buyer.job}</div>
+                                    <div className="w-full space-y-3 text-sm bg-black/30 p-4 rounded-lg">
+                                        <div className="flex justify-between items-center"><span className="text-gray-400">生命:</span> <span><span className="text-red-400">{buyer.hp}</span> / {effectiveMaxHp}</span></div>
+                                        <div className="flex justify-between items-center"><span className="text-gray-400">財富:</span> <span className="text-yellow-400 font-bold text-lg">{buyer.gold} G</span></div>
+                                        <div className="flex justify-between items-center pt-2 border-t border-gray-700"><span className="text-gray-400">裝備:</span> <span className="text-blue-300 font-bold">{buyer.equipment ? buyer.equipment.name : '無'}</span></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 右側：商城列表 */}
+                            <div className="md:w-2/3 h-fit">
+                                <h3 className="text-lg font-bold text-guild-paper mb-3 flex items-center"><i className="fa-solid fa-flask mr-2 text-blue-400"></i>消耗品與憑證</h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                                    {SHOP_ITEMS.filter(item => item.type === 'consumable' || item.type === 'passive' || item.type === 'special').map(item => {
+                                        const canAfford = buyer.gold >= item.cost;
+                                        const isWrongJob = item.job && buyer.job !== item.job;
+                                        const disabled = !canAfford || isWrongJob;
+                                        
+                                        let itemBg = 'bg-guild-dark/50 hover:bg-guild-dark border-transparent hover:border-guild-gold/30';
+                                        let titleColor = 'text-guild-paper';
+                                        if (item.type === 'special') {
+                                            itemBg = 'bg-purple-900/30 border-purple-500/50 hover:bg-purple-900/50';
+                                            titleColor = 'text-purple-300';
+                                        }
+
+                                        return (
+                                            <div key={item.id} className={`panel p-4 flex flex-col transition border relative overflow-hidden ${itemBg}`}>
+                                                <div className="flex justify-between items-start mb-2 z-10">
+                                                    <h4 className={`font-bold text-lg ${titleColor}`}>{item.name}</h4>
+                                                    <span className="text-guild-gold font-bold bg-yellow-900/30 px-2 py-1 rounded text-sm"><i className="fa-solid fa-coins mr-1"></i>{item.cost}</span>
+                                                </div>
+                                                <p className="text-xs text-gray-400 mb-4 flex-grow z-10 leading-relaxed">{item.desc}</p>
+                                                {item.job && <div className="text-xs font-bold text-blue-400 mb-3 z-10"><i className="fa-solid fa-circle-exclamation mr-1"></i>限定職業: {item.job}</div>}
+                                                <button onClick={() => onBuy(buyer.id, item)} disabled={disabled} className={`mt-auto w-full py-2 rounded font-bold transition flex items-center justify-center gap-2 z-10 ${disabled ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : (item.type === 'special' ? 'bg-purple-600 text-white hover:bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'bg-guild-gold text-guild-dark hover:bg-yellow-400 hover:scale-[1.02]')}`}>
+                                                    {isWrongJob ? <><i className="fa-solid fa-ban"></i> 職業不符</> : !canAfford ? <><i className="fa-solid fa-lock"></i> 金幣不足</> : <><i className="fa-solid fa-cart-shopping"></i> 購買</>}
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                <h3 className="text-lg font-bold text-blue-400 mb-3 flex items-center"><i className="fa-solid fa-khanda mr-2"></i>職業專屬武器 (裝備可獲得加成)</h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                                    {SHOP_ITEMS.filter(item => item.type === 'equipment').map(item => {
+                                        const canAfford = buyer.gold >= item.cost;
+                                        const isWrongJob = item.job && buyer.job !== item.job;
+                                        const disabled = !canAfford || isWrongJob;
+                                        
+                                        // 判斷 T2 武器賦予藍色史詩光芒
+                                        let itemBg = 'bg-guild-dark/50 hover:bg-guild-dark border-transparent hover:border-guild-gold/30';
+                                        let titleColor = 'text-guild-paper';
+                                        if (item.id.includes('w2_')) {
+                                            itemBg = 'bg-blue-900/20 border-blue-500/40 hover:bg-blue-900/40 hover:border-blue-400';
+                                            titleColor = 'text-blue-300';
+                                        }
+
+                                        return (
+                                            <div key={item.id} className={`panel p-4 flex flex-col transition border relative overflow-hidden ${itemBg}`}>
+                                                <div className="flex justify-between items-start mb-2 z-10">
+                                                    <h4 className={`font-bold text-lg ${titleColor}`}>{item.name}</h4>
+                                                    <span className="text-guild-gold font-bold bg-yellow-900/30 px-2 py-1 rounded text-sm"><i className="fa-solid fa-coins mr-1"></i>{item.cost}</span>
+                                                </div>
+                                                <p className="text-xs text-gray-400 mb-4 flex-grow z-10 leading-relaxed">{item.desc}</p>
+                                                {item.job && <div className="text-xs font-bold text-blue-400 mb-3 z-10"><i className="fa-solid fa-circle-exclamation mr-1"></i>限定職業: {item.job}</div>}
+                                                <button onClick={() => onBuy(buyer.id, item)} disabled={disabled} className={`mt-auto w-full py-2 rounded font-bold transition flex items-center justify-center gap-2 z-10 ${disabled ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : (item.id.includes('w2_') ? 'bg-blue-700 text-white hover:bg-blue-600 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : 'bg-guild-gold text-guild-dark hover:bg-yellow-400 hover:scale-[1.02]')}`}>
+                                                    {isWrongJob ? <><i className="fa-solid fa-ban"></i> 職業不符</> : !canAfford ? <><i className="fa-solid fa-lock"></i> 金幣不足</> : <><i className="fa-solid fa-khanda"></i> 裝備</>}
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                <h3 className="text-lg font-bold text-yellow-500 mb-3 flex items-center"><i className="fa-solid fa-crown mr-2"></i>尊爵頭像外框 (解鎖永久擁有)</h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {SHOP_ITEMS.filter(item => item.type === 'frame').map(item => {
+                                        const canAfford = buyer.gold >= item.cost;
+                                        const isOwned = buyer.avatar.unlockedFrames.includes(item.value);
+                                        const disabled = !canAfford || isOwned;
+                                        return (
+                                            <div key={item.id} className="panel p-4 flex flex-col bg-guild-dark border border-yellow-700/50 relative overflow-hidden">
+                                                <div className="flex justify-between items-start mb-2 z-10"><h4 className="font-bold text-lg text-yellow-500">{item.name}</h4><span className="text-guild-gold font-bold bg-yellow-900/30 px-2 py-1 rounded text-sm"><i className="fa-solid fa-coins mr-1"></i>{item.cost}</span></div>
+                                                <p className="text-xs text-yellow-200/60 mb-4 flex-grow z-10">{item.desc}</p>
+                                                <button onClick={() => onBuy(buyer.id, item)} disabled={disabled} className={`mt-auto w-full py-2 rounded font-bold transition flex items-center justify-center gap-2 z-10 ${isOwned ? 'bg-green-900/50 text-green-400 border border-green-600 cursor-not-allowed' : disabled ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-yellow-600 text-white hover:bg-yellow-500 shadow-[0_0_10px_rgba(202,138,4,0.5)]'}`}>
+                                                    {isOwned ? <><i className="fa-solid fa-check"></i> 已解鎖</> : !canAfford ? <><i className="fa-solid fa-lock"></i> 金幣不足</> : <><i className="fa-solid fa-unlock"></i> 解鎖外觀</>}
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const App = () => {
             const [currentClassId, setCurrentClassId] = useState(null); 
             const [view, setView] = useState('dashboard'); 
+            const [loginMode, setLoginMode] = useState(null); // 'teacher' 或 'student'
+            const [loggedInStudentId, setLoggedInStudentId] = useState(null);
+
             const [classes, setClasses] = useState([]);
             const [students, setStudents] = useState([]);
             const [groups, setGroups] = useState([]);
@@ -1361,12 +1616,21 @@
             
             const [squadBosses, setSquadBosses] = useState({});
             const [guildBoss, setGuildBoss] = useState(null);
-            const [penaltyItems, setPenaltyItems] = useState([]);
+            const [ruleItems, setRuleItems] = useState([]);
             
-            // ★ 新增：Firebase 雲端連線狀態與阻斷機制
+            // 雲端連線狀態與阻斷機制
             const [user, setUser] = useState(null);
             const [isCloudLoaded, setIsCloudLoaded] = useState(false);
-            const isRemoteUpdate = useRef(false); // 阻斷無限迴圈的關鍵
+            const [cloudError, setCloudError] = useState('');
+            const isRemoteUpdate = useRef(false);
+
+            // 將條件渲染前的所有 hooks 提升至頂層
+            const [selClass, setSelClass] = useState('');
+            const [selStudent, setSelStudent] = useState('');
+            const [inputPin, setInputPin] = useState('');
+            
+            const [isChangingPin, setIsChangingPin] = useState(false);
+            const [newPinStr, setNewPinStr] = useState('');
 
             // 初始化 Firebase 模組
             useEffect(() => {
@@ -1377,7 +1641,6 @@
                         const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
                         const { getFirestore, doc, setDoc, onSnapshot } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
 
-                        // 套用您專屬的 Firebase 金鑰
                         const userFirebaseConfig = {
                             apiKey: "AIzaSyDQK2SfKcC0VoI9XV_W2ScUAVRaX9PU9AM",
                             authDomain: "science-guild.firebaseapp.com",
@@ -1405,12 +1668,34 @@
                         unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
                     } catch(e) {
                         console.error("Firebase 連線初始化失敗，請檢查網路狀態", e);
-                        setIsCloudLoaded(true); // 若離線仍允許進入畫面
+                        if (e.code === 'auth/operation-not-allowed') {
+                            setCloudError('【認證失敗】您尚未在 Firebase Authentication 中開啟「匿名登入 (Anonymous)」！');
+                        } else {
+                            setCloudError(`【連線失敗】無法連接 Firebase: ${e.message}`);
+                        }
+                        setIsCloudLoaded(true);
                     }
                 };
                 initFirebase();
-                return () => { if (unsubscribe) unsubscribe(); };
-            }, []);
+                
+                // 註冊重置密碼事件監聽器
+                const handleResetEvent = (e) => {
+                    let updated = [...students];
+                    let sIndex = updated.findIndex(s => s.id === parseInt(e.detail));
+                    if(sIndex !== -1) {
+                        updated[sIndex].pin = '0000';
+                        setStudents(updated);
+                        addLog(`🔑 教師已重置 ${updated[sIndex].name} 的登入密碼為 0000。`, updated[sIndex].classId);
+                        alert('密碼已成功重置為 0000');
+                    }
+                };
+                window.addEventListener('reset-pin', handleResetEvent);
+
+                return () => { 
+                    if (unsubscribe) unsubscribe(); 
+                    window.removeEventListener('reset-pin', handleResetEvent);
+                };
+            }, [students]);
 
             // 讀取遠端資料
             useEffect(() => {
@@ -1422,17 +1707,15 @@
                     if (docSnap.exists()) {
                         const data = docSnap.data();
                         
-                        // ★ 核心修復：標記這是一次「由雲端下載」引發的狀態改變
-                        isRemoteUpdate.current = true;
-                        
+                        isRemoteUpdate.current = true; // 阻斷接下來的本地寫回迴圈
                         setClasses(data.classes || []);
                         
-                        // 解析並還原頭像屬性
                         let parsedStudents = data.students || [];
                         parsedStudents = parsedStudents.map(s => {
                             let av = s.avatar || {};
                             return {
                                 ...s, 
+                                pin: s.pin || '0000', 
                                 avatar: {
                                     seed: av.seed || s.name,
                                     skinColor: AVATAR_OPTIONS.skinColor.some(o => o.id === av.skinColor) ? av.skinColor : 'f2d3b1',
@@ -1456,15 +1739,26 @@
                         setLogs(data.logs || []);
                         setSquadBosses(data.squadBosses || {});
                         setGuildBoss(data.guildBoss || null);
-                        setPenaltyItems(data.penaltyItems || INITIAL_PENALTY_ITEMS);
+                        
+                        // 相容舊版扣分資料轉換為新版獎懲系統
+                        let loadedRules = data.ruleItems || data.penaltyItems;
+                        if (!loadedRules || loadedRules.length === 0) loadedRules = INITIAL_RULE_ITEMS;
+                        loadedRules = loadedRules.map(r => ({...r, type: r.type || 'penalty', exp: r.exp || r.points || 0, gold: r.gold || 0}));
+                        setRuleItems(loadedRules);
+                        
+                        setCloudError(''); 
                         
                     } else {
-                        // 讓系統保留原本從瀏覽器讀取到的進度，隨後自動上傳到雲端建立新存檔
                         console.log("雲端尚無存檔，準備將本地資料上傳同步...");
                     }
                     setIsCloudLoaded(true);
                 }, (error) => {
                     console.error("Firebase 同步錯誤:", error);
+                    if (error.code === 'permission-denied') {
+                        setCloudError('【權限遭拒】請至 Firestore Database 修改「規則 (Rules)」設定允許讀寫。');
+                    } else {
+                        setCloudError(`【同步失敗】資料庫連線異常: ${error.message}`);
+                    }
                     setIsCloudLoaded(true);
                 });
                 return () => unsubscribeData();
@@ -1478,9 +1772,8 @@
                 const savedLogs = localStorage.getItem('guild_logs');
                 const savedSquadBosses = localStorage.getItem('guild_squad_bosses');
                 const savedGuildBoss = localStorage.getItem('guild_guild_boss');
-                const savedPenaltyItems = localStorage.getItem('guild_penalty_items');
+                const savedRuleItems = localStorage.getItem('guild_rule_items') || localStorage.getItem('guild_penalty_items');
                 
-                // 本地若有存檔先載入，等待 Firebase 連線後再覆蓋
                 if (savedClasses && savedStudents && savedGroups) {
                     setClasses(JSON.parse(savedClasses));
                     setStudents(JSON.parse(savedStudents));
@@ -1488,12 +1781,16 @@
                     if (savedLogs) setLogs(JSON.parse(savedLogs));
                     if (savedSquadBosses) setSquadBosses(JSON.parse(savedSquadBosses));
                     if (savedGuildBoss) setGuildBoss(JSON.parse(savedGuildBoss));
-                    if (savedPenaltyItems) setPenaltyItems(JSON.parse(savedPenaltyItems));
+                    if (savedRuleItems) {
+                        let parsed = JSON.parse(savedRuleItems);
+                        parsed = parsed.map(r => ({...r, type: r.type || 'penalty', exp: r.exp || r.points || 0, gold: r.gold || 0}));
+                        setRuleItems(parsed);
+                    }
                 } else {
                     setClasses(INITIAL_CLASSES);
                     setStudents(INITIAL_STUDENTS);
                     setGroups(INITIAL_GROUPS);
-                    setPenaltyItems(INITIAL_PENALTY_ITEMS);
+                    setRuleItems(INITIAL_RULE_ITEMS);
                 }
             }, []);
 
@@ -1506,26 +1803,33 @@
                     localStorage.setItem('guild_logs', JSON.stringify(logs));
                     localStorage.setItem('guild_squad_bosses', JSON.stringify(squadBosses));
                     localStorage.setItem('guild_guild_boss', JSON.stringify(guildBoss));
-                    localStorage.setItem('guild_penalty_items', JSON.stringify(penaltyItems));
+                    localStorage.setItem('guild_rule_items', JSON.stringify(ruleItems));
                 }
 
                 if (!isCloudLoaded || !user || !window.db) return;
                 
-                // ★ 核心修復：阻斷無限迴圈。如果是接收雲端資料而導致的渲染，不要寫回雲端
+                // 阻斷無限迴圈
                 if (isRemoteUpdate.current) {
                     isRemoteUpdate.current = false;
                     return;
                 }
                 
-                const payload = { classes, students, groups, logs, squadBosses, guildBoss, penaltyItems };
-                // 淨化物件 (過濾所有可能造成 Firebase 當機的 undefined 屬性)
+                const payload = { classes, students, groups, logs, squadBosses, guildBoss, ruleItems };
                 const cleanPayload = JSON.parse(JSON.stringify(payload));
                 
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'science-guild';
                 const stateRef = window.doc(window.db, 'artifacts', appId, 'public', 'data', 'guildData', 'mainState');
-                window.setDoc(stateRef, cleanPayload).catch(console.error);
                 
-            }, [classes, students, groups, logs, squadBosses, guildBoss, penaltyItems, isCloudLoaded, user]);
+                window.setDoc(stateRef, cleanPayload).catch(e => {
+                    console.error("Save error", e);
+                    if (e.code === 'permission-denied') {
+                        setCloudError('【存檔被拒絕】請至 Firestore Database 修改「規則 (Rules)」設定允許讀寫。');
+                    } else {
+                        setCloudError(`【存檔失敗】${e.message}`);
+                    }
+                });
+                
+            }, [classes, students, groups, logs, squadBosses, guildBoss, ruleItems, isCloudLoaded, user]);
 
             const addLog = (msg, targetClassId = currentClassId) => {
                 const time = new Date().toLocaleTimeString('zh-TW', { hour12: false });
@@ -1586,7 +1890,6 @@
                 let student = { ...updatedStudents[sIndex] };
                 const synergy = getGroupSynergy(student.groupId, updatedStudents);
 
-                // 結算受傷
                 if (damageTaken > 0 && !isDodged) {
                     student.hp -= damageTaken;
                     addLog(`🩸 ${student.name} 遭到魔王攻擊，失去 ${damageTaken} 點生命。`, student.classId);
@@ -1612,7 +1915,6 @@
                     addLog(`💨 ${student.name} 敏捷地閃避了魔王的致命攻擊！`, student.classId);
                 }
 
-                // 結算回復 (自身羈絆)
                 if (student.hp > 0 && healAmt > 0) {
                     const effectiveMaxHp = student.maxHp + synergy.hpBonus;
                     student.hp = Math.min(student.hp + healAmt, effectiveMaxHp);
@@ -1621,7 +1923,6 @@
 
                 updatedStudents[sIndex] = student;
 
-                // 牧師全隊回復與復活
                 const aliveClerics = updatedStudents.filter(s => s.groupId === student.groupId && s.job === '牧師' && s.hp > 0);
                 if (aliveClerics.length > 0) {
                     let healedOthers = false;
@@ -1652,9 +1953,8 @@
                     if (healedOthers) addLog(`✨ 聖光普照！牧師的祈禱為小隊成員恢復了 5 點生命。`, student.classId);
                 }
 
-                student = updatedStudents.find(s => s.id === student.id); // 更新當前學生參考
+                student = updatedStudents.find(s => s.id === student.id);
 
-                // 結算對魔王傷害
                 if (damageDealt > 0) {
                     addLog(`⚔️ ${student.name} 對魔王造成了 ${damageDealt} 點傷害！`, student.classId);
                     
@@ -1805,7 +2105,8 @@
                 setGroups(updatedGroups);
             };
 
-            const handleApplyPenalty = (studentId, penaltyId) => {
+            // ★ 更新：綜合的獎懲執行邏輯 (加扣分與金幣)
+            const handleApplyRule = (studentId, ruleId) => {
                 let updatedStudents = [...students];
                 let updatedGroups = [...groups];
                 let sIndex = updatedStudents.findIndex(s => s.id === parseInt(studentId));
@@ -1813,39 +2114,69 @@
 
                 let student = { ...updatedStudents[sIndex] };
                 let gIndex = updatedGroups.findIndex(g => g.id === student.groupId);
-                const penaltyItem = penaltyItems.find(p => p.id === penaltyId);
-                if(!penaltyItem) return;
+                const ruleItem = ruleItems.find(p => p.id === ruleId);
+                if(!ruleItem) return;
 
-                const pts = penaltyItem.points;
-                student.exp -= pts;
+                if (ruleItem.type === 'penalty') {
+                    playAudio('penalty'); // ★ 處罰音效
+                    const pts = ruleItem.exp || 0;
+                    student.exp -= pts;
 
-                while(student.exp < 0 && student.level > 1) {
-                    student.level -= 1;
-                    student.maxHp -= 5;
-                    student.exp += getExpReq(student.level);
+                    while(student.exp < 0 && student.level > 1) {
+                        student.level -= 1;
+                        student.maxHp -= 5;
+                        student.exp += getExpReq(student.level);
+                    }
+                    if (student.exp < 0) student.exp = 0; 
+                    
+                    const synergy = getGroupSynergy(student.groupId, updatedStudents);
+                    const effMaxHp = student.maxHp + synergy.hpBonus;
+                    if (student.hp > effMaxHp) student.hp = effMaxHp;
+
+                    updatedStudents[sIndex] = student;
+                    if(gIndex !== -1) updatedGroups[gIndex].score = Math.max(0, updatedGroups[gIndex].score - pts);
+
+                    setStudents(updatedStudents);
+                    setGroups(updatedGroups);
+
+                    addLog(`⚖️ 紀律裁決：${student.name} 因為【${ruleItem.name}】被扣除了 ${pts} EXP！`, student.classId);
+                } else {
+                    playAudio('win'); // ★ 獎勵音效
+                    const expReward = ruleItem.exp || 0;
+                    const goldReward = ruleItem.gold || 0;
+                    
+                    student.exp += expReward;
+                    student.gold += goldReward;
+                    if(gIndex !== -1) updatedGroups[gIndex].score += expReward;
+                    
+                    let reqExp = getExpReq(student.level);
+                    let leveledUp = false;
+                    while (student.exp >= reqExp) {
+                        student.exp -= reqExp;
+                        student.level += 1;
+                        student.maxHp += 5;
+                        const synergy = getGroupSynergy(student.groupId, updatedStudents);
+                        student.hp = student.maxHp + synergy.hpBonus; 
+                        leveledUp = true;
+                        reqExp = getExpReq(student.level);
+                    }
+
+                    updatedStudents[sIndex] = student;
+                    setStudents(updatedStudents);
+                    setGroups(updatedGroups);
+
+                    addLog(`🎁 獎勵頒發：${student.name} 因為【${ruleItem.name}】獲得了 ${expReward} EXP 與 ${goldReward} G！`, student.classId);
+                    if(leveledUp) addLog(`🆙 ${student.name} 升級到了等級 ${student.level}！`, student.classId);
                 }
-                if (student.exp < 0) student.exp = 0; 
-                
-                const synergy = getGroupSynergy(student.groupId, updatedStudents);
-                const effMaxHp = student.maxHp + synergy.hpBonus;
-                if (student.hp > effMaxHp) student.hp = effMaxHp;
-
-                updatedStudents[sIndex] = student;
-                if(gIndex !== -1) updatedGroups[gIndex].score = Math.max(0, updatedGroups[gIndex].score - pts);
-
-                setStudents(updatedStudents);
-                setGroups(updatedGroups);
-
-                addLog(`⚖️ 紀律裁決：${student.name} 因為【${penaltyItem.name}】被扣除了 ${pts} 總分！`, student.classId);
             };
 
-            const handleAddPenaltyItem = (name, points) => {
-                const newItem = { id: Date.now(), name, points: parseInt(points) };
-                setPenaltyItems([...penaltyItems, newItem]);
+            const handleAddRuleItem = (type, name, exp, gold) => {
+                const newItem = { id: Date.now(), type, name, exp: parseInt(exp)||0, gold: parseInt(gold)||0 };
+                setRuleItems([...ruleItems, newItem]);
             };
 
-            const handleDeletePenaltyItem = (id) => {
-                setPenaltyItems(penaltyItems.filter(i => i.id !== id));
+            const handleDeleteRuleItem = (id) => {
+                setRuleItems(ruleItems.filter(i => i.id !== id));
             };
 
             const changeJob = (studentId, newJob) => {
@@ -1970,11 +2301,15 @@
             const handleAddStudent = (namesStr, classId, groupId) => {
                 const names = namesStr.split(/[,，\n、]+/).map(n => n.trim()).filter(n => n);
                 if (names.length === 0) return;
+                
                 setStudents(prev => {
                     let maxId = prev.length > 0 ? Math.max(...prev.map(s => s.id)) : 0;
+                    const classSize = prev.filter(s => s.classId === parseInt(classId)).length;
+
                     const newStudents = names.map((name, i) => ({
                         id: maxId + i + 1, classId: parseInt(classId), groupId: parseInt(groupId), 
-                        name, level: 1, exp: 0, gold: 0, hp: 20, maxHp: 20, job: '新手', inventory: [], equipment: null, avatar: defaultAvatar(name)
+                        name, pin: '0000', level: 1, exp: 0, gold: 0, hp: 20, maxHp: 20, job: '新手', 
+                        inventory: [], equipment: null, avatar: defaultAvatar(name, classSize + i + 1) 
                     }));
                     return [...prev, ...newStudents];
                 });
@@ -1984,6 +2319,8 @@
             const handleLogout = () => {
                 setCurrentClassId(null);
                 setShopBuyerId(null);
+                setLoginMode(null);
+                setLoggedInStudentId(null);
                 setView('dashboard');
             };
 
@@ -2003,19 +2340,79 @@
                 );
             }
 
+            if (view === 'student_login') {
+                const doLogin = () => {
+                    const student = students.find(s => s.id === parseInt(selStudent));
+                    if (student && student.pin === inputPin) {
+                        setCurrentClassId(student.classId);
+                        setLoggedInStudentId(student.id);
+                        setLoginMode('student');
+                        setView('student_dashboard');
+                    } else {
+                        alert('密碼錯誤或未選擇冒險者！');
+                    }
+                };
+
+                return (
+                    <div className="min-h-screen flex items-center justify-center p-4 relative z-10 animate-fade-in flex-col">
+                        <div className="panel p-8 md:p-12 max-w-lg w-full text-center shadow-[0_0_50px_rgba(96,165,250,0.15)] border border-blue-500/30">
+                            <i className="fa-solid fa-user-shield text-5xl text-blue-400 mb-4"></i>
+                            <h2 className="text-3xl font-bold text-blue-400 mb-2 tracking-widest">冒險者登入</h2>
+                            <p className="text-gray-400 mb-8 text-sm">請驗證您的公會身分以查看個人面板</p>
+                            
+                            <div className="space-y-4 text-left">
+                                <div>
+                                    <label className="block text-sm text-guild-paper mb-1">所屬分會</label>
+                                    <select value={selClass} onChange={e => {setSelClass(e.target.value); setSelStudent('');}} className="w-full p-3 bg-guild-dark border border-gray-600 rounded text-guild-paper focus:outline-none focus:border-blue-400">
+                                        <option value="">-- 選擇班級 --</option>
+                                        {classes.filter(c => !c.isArchived).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm text-guild-paper mb-1">冒險者姓名</label>
+                                    <select value={selStudent} onChange={e => setSelStudent(e.target.value)} disabled={!selClass} className="w-full p-3 bg-guild-dark border border-gray-600 rounded text-guild-paper focus:outline-none focus:border-blue-400">
+                                        <option value="">-- 選擇姓名 --</option>
+                                        {students.filter(s => s.classId === parseInt(selClass)).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm text-guild-paper mb-1">身分密碼 (預設:0000)</label>
+                                    <input type="password" placeholder="請輸入 4 位數密碼" value={inputPin} onChange={e => setInputPin(e.target.value)} maxLength="4" className="w-full p-3 bg-guild-dark border border-gray-600 rounded text-guild-paper focus:outline-none focus:border-blue-400 tracking-widest text-center text-xl" />
+                                </div>
+                                <button onClick={doLogin} className="w-full py-4 mt-6 bg-blue-700 hover:bg-blue-600 text-white font-bold rounded shadow-lg transition text-lg">登入系統</button>
+                                <button onClick={() => setView('dashboard')} className="w-full py-2 mt-2 text-gray-500 hover:text-white transition text-sm">取消返回</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
             if (currentClassId === null) {
                 const worldLogs = logs.filter(l => l.classId === null);
 
                 return (
                     <div className="min-h-screen flex items-center justify-center p-4 relative z-10 animate-fade-in flex-col">
+                        {cloudError && (
+                            <div className="bg-red-900/80 border-l-4 border-red-500 text-white p-4 rounded mb-6 w-full max-w-4xl text-left shadow-lg animate-pulse z-50">
+                                <div className="font-bold flex items-center"><i className="fa-solid fa-triangle-exclamation mr-2 text-xl"></i> 雲端同步系統發生錯誤</div>
+                                <div className="mt-1 text-red-200">{cloudError}</div>
+                            </div>
+                        )}
+
+                        <div className="flex w-full max-w-4xl justify-end mb-4">
+                            <button onClick={() => setView('student_login')} className="px-6 py-2 bg-blue-900/80 hover:bg-blue-800 border border-blue-500/50 text-blue-200 font-bold rounded-full shadow-lg transition flex items-center">
+                                <i className="fa-solid fa-user-shield mr-2"></i> 冒險者(學生)登入
+                            </button>
+                        </div>
+
                         <div className="panel p-8 md:p-12 max-w-4xl w-full text-center shadow-[0_0_50px_rgba(197,159,68,0.15)] mb-8">
                             <i className="fa-solid fa-dragon text-6xl text-guild-gold mb-4"></i>
                             <h1 className="text-4xl font-bold text-guild-gold mb-2 tracking-widest">自然科學冒險者公會</h1>
-                            <p className="text-guild-paper/70 mb-10 text-lg">世界地圖 - 請選擇您要進入的分會大廳</p>
+                            <p className="text-guild-paper/70 mb-10 text-lg">世界地圖 - 請選擇您要進入的分會大廳 (教師專用)</p>
                             
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-10">
                                 {classes.filter(c => !c.isArchived).map(c => (
-                                    <button key={c.id} onClick={() => setCurrentClassId(c.id)} className="panel p-8 border border-guild-gold/30 hover:border-guild-gold hover:bg-guild-gold/10 transition group transform hover:-translate-y-1">
+                                    <button key={c.id} onClick={() => { setCurrentClassId(c.id); setLoginMode('teacher'); }} className="panel p-8 border border-guild-gold/30 hover:border-guild-gold hover:bg-guild-gold/10 transition group transform hover:-translate-y-1">
                                         <i className="fa-solid fa-dungeon text-4xl text-gray-500 group-hover:text-guild-gold mb-4 transition duration-300"></i>
                                         <h3 className="text-2xl font-bold text-guild-paper group-hover:text-white transition">{c.name}</h3>
                                         <p className="text-xs text-gray-500 mt-2">進入分會</p>
@@ -2030,7 +2427,7 @@
                                 </div>
                             </div>
                             <div className="mt-8 pt-4">
-                                <button onClick={() => { setCurrentClassId('admin'); setView('admin'); }} className="text-gray-500 hover:text-guild-gold transition text-sm flex items-center justify-center w-full">
+                                <button onClick={() => { setCurrentClassId('admin'); setLoginMode('teacher'); setView('admin'); }} className="text-gray-500 hover:text-guild-gold transition text-sm flex items-center justify-center w-full">
                                     <i className="fa-solid fa-gear mr-2"></i> 進入教師辦公室 (管理後台)
                                 </button>
                             </div>
@@ -2047,6 +2444,104 @@
                         </div>
                     </div>
                 );
+            }
+
+            if (loginMode === 'student' && view === 'student_dashboard') {
+                const student = students.find(s => s.id === loggedInStudentId);
+                if (!student) return <div>載入錯誤</div>;
+                const synergy = getGroupSynergy(student.groupId, students);
+                const effectiveMaxHp = student.maxHp + synergy.hpBonus;
+                const hpPercent = Math.min((student.hp / effectiveMaxHp) * 100, 100);
+                const expPercent = (student.exp / (student.level * 100)) * 100;
+                const groupName = getGroup(student.groupId)?.name || '無小隊';
+
+                const handlePinChange = () => {
+                    if(newPinStr.length !== 4) return alert('密碼必須是 4 碼！');
+                    let updated = [...students];
+                    let sIndex = updated.findIndex(s => s.id === student.id);
+                    updated[sIndex].pin = newPinStr;
+                    setStudents(updated);
+                    setIsChangingPin(false);
+                    alert('密碼修改成功！');
+                };
+
+                return (
+                    <div className="flex flex-col min-h-screen animate-fade-in relative z-10">
+                        <nav className="w-full panel rounded-none border-b border-blue-500/30 bg-blue-950/20 p-4 flex items-center justify-between z-20 sticky top-0 shadow-lg">
+                            <div className="flex items-center gap-3">
+                                <i className="fa-solid fa-shield-halved text-2xl text-blue-400"></i>
+                                <div>
+                                    <h1 className="text-lg font-bold text-blue-300 tracking-widest leading-none">冒險者個人終端</h1>
+                                    <p className="text-xs text-gray-400 mt-1">[{getClassObj(student.classId)?.name}] 專屬連線</p>
+                                </div>
+                            </div>
+                            <button onClick={handleLogout} className="px-4 py-2 bg-guild-dark border border-gray-600 hover:bg-red-900/50 hover:text-white text-gray-400 font-bold rounded transition text-sm flex items-center">
+                                <i className="fa-solid fa-right-from-bracket mr-2"></i> 登出
+                            </button>
+                        </nav>
+                        
+                        <main className="flex-1 p-4 md:p-8 overflow-y-auto max-w-4xl mx-auto w-full">
+                            <div className="panel p-8 flex flex-col md:flex-row gap-8 items-center md:items-start border border-blue-500/20 shadow-[0_0_30px_rgba(59,130,246,0.1)]">
+                                <div className="flex flex-col items-center shrink-0">
+                                    <AvatarDisplay student={student} size="w-48 h-48" />
+                                    <div className="mt-6 w-full flex flex-col gap-2">
+                                        <button onClick={() => setEditingAvatarId(student.id)} className="w-full py-2 bg-indigo-800 hover:bg-indigo-700 text-white font-bold rounded shadow transition text-sm"><i className="fa-solid fa-scissors mr-2"></i>進入換裝室</button>
+                                        <button onClick={() => setShopBuyerId(student.id)} className="w-full py-2 bg-yellow-700 hover:bg-yellow-600 text-white font-bold rounded shadow transition text-sm"><i className="fa-solid fa-store mr-2"></i>開啟隨身商行</button>
+                                    </div>
+                                </div>
+                                <div className="flex-1 w-full space-y-6">
+                                    <div>
+                                        <div className="text-blue-400 text-sm mb-1">{groupName}</div>
+                                        <h2 className="text-4xl font-bold text-white mb-2">{student.name} <span className="text-xl text-gray-400 font-normal ml-2">Lv.{student.level} {student.job}</span></h2>
+                                        <div className="text-guild-gold font-bold text-lg"><i className="fa-solid fa-coins mr-1"></i> {student.gold} G &nbsp; | &nbsp; <span className="text-gray-400 font-normal text-sm">公會總分: {(student.level-1)*1000 + student.exp}</span></div>
+                                    </div>
+
+                                    <div className="space-y-4 bg-guild-dark p-6 rounded-lg border border-gray-700">
+                                        <div>
+                                            <div className="flex justify-between text-sm mb-1"><span className="text-red-400 font-bold"><i className="fa-solid fa-heart mr-2"></i>生命值</span><span>{student.hp} / {effectiveMaxHp}</span></div>
+                                            <div className="hp-bar-container h-3"><div className="hp-bar-fill" style={{width: `${hpPercent}%`}}></div></div>
+                                        </div>
+                                        <div>
+                                            <div className="flex justify-between text-sm mb-1"><span className="text-blue-400 font-bold"><i className="fa-solid fa-star mr-2"></i>目前經驗值</span><span>{student.exp} / {student.level * 100}</span></div>
+                                            <div className="exp-bar-container h-2"><div className="exp-bar-fill" style={{width: `${expPercent}%`}}></div></div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-guild-dark p-4 rounded border border-gray-700">
+                                            <h4 className="text-gray-400 text-sm mb-2">當前裝備</h4>
+                                            <div className="text-blue-300 font-bold">{student.equipment ? <><i className="fa-solid fa-khanda mr-2"></i>{student.equipment.name}</> : '尚無裝備'}</div>
+                                        </div>
+                                        <div className="bg-guild-dark p-4 rounded border border-gray-700">
+                                            <h4 className="text-gray-400 text-sm mb-2">背包道具</h4>
+                                            <div className="flex flex-wrap gap-2">
+                                                {student.inventory.length === 0 ? <span className="text-gray-500">背包空空如也</span> : student.inventory.map((i, idx) => (
+                                                    <span key={idx} className="bg-gray-800 text-gray-300 px-2 py-1 rounded text-xs"><i className="fa-solid fa-box mr-1"></i>{i.name}</span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="border-t border-gray-700 pt-4 mt-4 text-right">
+                                        {isChangingPin ? (
+                                            <div className="flex justify-end gap-2">
+                                                <input type="text" placeholder="新 4 碼" value={newPinStr} onChange={e=>setNewPinStr(e.target.value)} maxLength="4" className="w-24 p-1 bg-black border border-gray-500 rounded text-white text-center" />
+                                                <button onClick={handlePinChange} className="px-3 py-1 bg-green-700 text-white rounded text-sm">儲存</button>
+                                                <button onClick={()=>setIsChangingPin(false)} className="px-3 py-1 bg-gray-700 text-white rounded text-sm">取消</button>
+                                            </div>
+                                        ) : (
+                                            <button onClick={()=>setIsChangingPin(true)} className="text-gray-500 hover:text-white text-sm transition"><i className="fa-solid fa-key mr-1"></i> 修改登入密碼</button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </main>
+                        
+                        {/* 學生視角的彈窗共用原本的元件 */}
+                        {shopBuyerId && <Shop buyer={students.find(s => s.id === shopBuyerId)} onBuy={buyItem} onClose={() => setShopBuyerId(null)} students={students} />}
+                        {editingAvatarId && <AvatarEditor student={students.find(s => s.id === editingAvatarId)} onSave={saveAvatar} onClose={() => setEditingAvatarId(null)} />}
+                    </div>
+                )
             }
 
             return (
@@ -2073,9 +2568,16 @@
                                 )}
                             </div>
                         </div>
-                        <button onClick={handleLogout} className="px-4 py-2 bg-guild-dark border border-gray-600 hover:bg-red-900/50 hover:border-red-500 hover:text-white text-gray-400 font-bold rounded transition text-sm flex items-center">
-                            <i className="fa-solid fa-right-from-bracket mr-2"></i> 返回世界地圖
-                        </button>
+                        <div className="flex items-center gap-4">
+                            {cloudError && (
+                                <div className="text-red-400 text-xs flex items-center font-bold" title={cloudError}>
+                                    <i className="fa-solid fa-cloud-xmark mr-1 animate-pulse"></i> 離線(未存檔)
+                                </div>
+                            )}
+                            <button onClick={handleLogout} className="px-4 py-2 bg-guild-dark border border-gray-600 hover:bg-red-900/50 hover:border-red-500 hover:text-white text-gray-400 font-bold rounded transition text-sm flex items-center">
+                                <i className="fa-solid fa-right-from-bracket mr-2"></i> 返回世界地圖
+                            </button>
+                        </div>
                     </nav>
 
                     {currentClassId !== 'admin' && (
@@ -2089,12 +2591,12 @@
                     <main className="flex-1 p-4 md:p-8 overflow-y-auto">
                         {view === 'admin' && <AdminPanel students={students} classes={classes} onApprove={handleApproveCustomAvatar} onReject={handleRejectCustomAvatar} onArchiveClass={handleArchiveClass} onDeleteClass={handleDeleteClass} />}
                         {view === 'dashboard' && <Dashboard classId={currentClassId} groups={groups} students={students} logs={logs} />}
-                        {view === 'roster' && <Roster classId={currentClassId} groups={groups} students={students} getGroup={getGroup} onOpenShop={setShopBuyerId} onOpenAvatarEditor={setEditingAvatarId} onAddGroup={handleAddGroup} onAddStudent={handleAddStudent} penaltyItems={penaltyItems} onAddPenaltyItem={handleAddPenaltyItem} onDeletePenaltyItem={handleDeletePenaltyItem} onApplyPenalty={handleApplyPenalty} />}
+                        {view === 'roster' && <Roster classId={currentClassId} groups={groups} students={students} getGroup={getGroup} onOpenShop={setShopBuyerId} onOpenAvatarEditor={setEditingAvatarId} onAddGroup={handleAddGroup} onAddStudent={handleAddStudent} ruleItems={ruleItems} onAddRuleItem={handleAddRuleItem} onDeleteRuleItem={handleDeleteRuleItem} onApplyRule={handleApplyRule} />}
                         {view === 'quest' && <QuestBoard classId={currentClassId} students={students} groups={groups} squadBosses={squadBosses} guildBoss={guildBoss} onResult={handleQuestResult} onSpawnBoss={handleSpawnBoss} onBossAttack={handleBossAttack} />}
                     </main>
 
                     {/* Modal Layer */}
-                    {shopBuyerId && <Shop buyer={students.find(s => s.id === shopBuyerId)} onBuy={buyItem} onClose={() => setShopBuyerId(null)} />}
+                    {shopBuyerId && <Shop buyer={students.find(s => s.id === shopBuyerId)} onBuy={buyItem} onClose={() => setShopBuyerId(null)} students={students} />}
                     {editingAvatarId && <AvatarEditor student={students.find(s => s.id === editingAvatarId)} onSave={saveAvatar} onClose={() => setEditingAvatarId(null)} />}
                     
                     {/* ★ 轉職視窗 (買卡後觸發) */}
