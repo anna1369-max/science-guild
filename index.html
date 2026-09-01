@@ -882,16 +882,26 @@
             );
         };
 
-        const AdminPanel = ({ students, classes, onApprove, onReject, onArchiveClass, onDeleteClass }) => {
+        const AdminPanel = ({ students, classes, groups, onApprove, onReject, onArchiveClass, onDeleteClass, onAddGroup, onDeleteGroup, onDeleteStudent }) => {
             const [tab, setTab] = useState('avatar'); 
             const [confirmModal, setConfirmModal] = useState(null);
+            const [manageClassId, setManageClassId] = useState(null);
+            const [manageSubTab, setManageSubTab] = useState('group');
+            const [newGroupName, setNewGroupName] = useState('');
             const pendingStudents = students.filter(s => s.avatar.customImageStatus === 'pending');
 
             const executeAction = () => {
                 if (confirmModal.type === 'archive') onArchiveClass(confirmModal.classId);
                 else if (confirmModal.type === 'delete') onDeleteClass(confirmModal.classId);
+                else if (confirmModal.type === 'deleteGroup') onDeleteGroup(confirmModal.groupId);
+                else if (confirmModal.type === 'deleteStudent') onDeleteStudent(confirmModal.studentId);
                 setConfirmModal(null);
             };
+
+            const manageClass = manageClassId ? classes.find(c => c.id === manageClassId) : null;
+            const manageGroups = manageClassId ? groups.filter(g => g.classId === manageClassId) : [];
+            const manageStudents = manageClassId ? students.filter(s => s.classId === manageClassId) : [];
+            const getGroupNameLocal = (gid) => manageGroups.find(g => g.id === gid)?.name || '無小隊';
 
             return (
                 <div className="max-w-6xl mx-auto animate-fade-in space-y-6">
@@ -936,6 +946,9 @@
                                     <div className="text-gray-400 text-sm mb-6">
                                         冒險者人數: <span className="text-guild-paper font-bold">{students.filter(s => s.classId === c.id).length}</span> 人
                                     </div>
+                                    <button onClick={() => { setManageClassId(c.id); setManageSubTab('group'); setNewGroupName(''); }} className="w-full py-2 mb-3 bg-purple-900 hover:bg-purple-800 border border-purple-600 text-white font-bold rounded shadow transition text-sm flex items-center justify-center">
+                                        <i className="fa-solid fa-people-group mr-2"></i> 管理小隊與冒險者
+                                    </button>
                                     <div className="flex w-full gap-3 mt-auto">
                                         <button onClick={() => setConfirmModal({type: 'archive', classId: c.id, className: c.name})} className={`flex-1 py-2 ${c.isArchived ? 'bg-blue-800 hover:bg-blue-700 border-blue-600' : 'bg-yellow-800 hover:bg-yellow-700 border-yellow-600'} text-white font-bold rounded border shadow transition text-sm flex items-center justify-center`}>
                                             <i className={`fa-solid ${c.isArchived ? 'fa-box-open' : 'fa-box-archive'} mr-2`}></i> {c.isArchived ? '解除封存' : '出師封存'}
@@ -952,23 +965,88 @@
 
                     {confirmModal && (
                         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[100]">
-                            <div className={`panel p-6 max-w-md w-full text-center border shadow-2xl ${confirmModal.type === 'delete' ? 'border-red-500 shadow-red-900/50' : 'border-yellow-500 shadow-yellow-900/50'}`}>
-                                <i className={`fa-solid ${confirmModal.type === 'delete' ? 'fa-triangle-exclamation text-red-500' : 'fa-box-archive text-yellow-500'} text-5xl mb-4 animate-bounce`}></i>
+                            <div className={`panel p-6 max-w-md w-full text-center border shadow-2xl ${confirmModal.type === 'archive' ? 'border-yellow-500 shadow-yellow-900/50' : 'border-red-500 shadow-red-900/50'}`}>
+                                <i className={`fa-solid ${confirmModal.type === 'archive' ? 'fa-box-archive text-yellow-500' : 'fa-triangle-exclamation text-red-500'} text-5xl mb-4 animate-bounce`}></i>
                                 <h3 className="text-2xl font-bold text-white mb-2">
-                                    {confirmModal.type === 'delete' ? '永久刪除警告' : '出師封存確認'}
+                                    {confirmModal.type === 'archive' ? '出師封存確認'
+                                        : confirmModal.type === 'delete' ? '永久刪除警告'
+                                        : confirmModal.type === 'deleteGroup' ? '解散小隊確認'
+                                        : '除名冒險者確認'}
                                 </h3>
                                 <p className="text-gray-300 mb-6 leading-relaxed">
                                     {confirmModal.type === 'delete'
                                         ? `您確定要永久刪除【${confirmModal.className}】嗎？此動作將清除該班級所有的冒險者、小隊與任務日誌，且無法復原！`
-                                        : `確定要更改【${confirmModal.className}】的封存狀態嗎？出師封存後的班級將不會顯示在首頁的世界地圖上。`}
+                                        : confirmModal.type === 'archive'
+                                        ? `確定要更改【${confirmModal.className}】的封存狀態嗎？出師封存後的班級將不會顯示在首頁的世界地圖上。`
+                                        : confirmModal.type === 'deleteGroup'
+                                        ? `您確定要解散小隊【${confirmModal.groupName}】嗎？此小隊將被移除，原本的隊員會變成「無小隊」狀態，但學生資料不會被刪除。`
+                                        : `您確定要將冒險者【${confirmModal.studentName}】永久從公會除名嗎？該學生的所有等級、金幣與裝備紀錄都將一併消失，且無法復原！`}
                                 </p>
                                 <div className="flex gap-4 justify-center">
-                                    <button onClick={executeAction} className={`px-8 py-3 font-bold rounded shadow-lg transition ${confirmModal.type === 'delete' ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-yellow-700 hover:bg-yellow-600 text-white'}`}>
-                                        確定{confirmModal.type === 'delete' ? '刪除' : '執行'}
+                                    <button onClick={executeAction} className={`px-8 py-3 font-bold rounded shadow-lg transition ${confirmModal.type === 'archive' ? 'bg-yellow-700 hover:bg-yellow-600 text-white' : 'bg-red-700 hover:bg-red-600 text-white'}`}>
+                                        確定{confirmModal.type === 'archive' ? '執行' : confirmModal.type === 'deleteGroup' ? '解散' : '刪除'}
                                     </button>
                                     <button onClick={() => setConfirmModal(null)} className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded shadow-lg transition">
                                         取消
                                     </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {manageClassId && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[90]">
+                            <div className="panel p-0 max-w-2xl w-full flex flex-col relative border-guild-gold overflow-hidden max-h-[85vh]">
+                                <button onClick={() => setManageClassId(null)} className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl transition hover:rotate-90 z-10"><i className="fa-solid fa-xmark"></i></button>
+                                <div className="p-6 pb-0">
+                                    <h3 className="text-2xl font-bold text-guild-gold mb-1"><i className="fa-solid fa-people-group mr-2"></i>{manageClass?.name}</h3>
+                                    <p className="text-xs text-gray-500 mb-4">在此可以直接建立/解散小隊，或將冒險者從公會除名，方便新班級一開始就能完整建置。</p>
+                                </div>
+                                <div className="flex bg-guild-dark border-y border-guild-gold/30">
+                                    <button onClick={() => setManageSubTab('group')} className={`flex-1 py-3 text-center font-bold transition ${manageSubTab === 'group' ? 'bg-guild-gold text-guild-dark' : 'text-gray-400 hover:bg-guild-gold/20'}`}>小隊管理</button>
+                                    <button onClick={() => setManageSubTab('student')} className={`flex-1 py-3 text-center font-bold transition ${manageSubTab === 'student' ? 'bg-guild-gold text-guild-dark' : 'text-gray-400 hover:bg-guild-gold/20'}`}>冒險者管理</button>
+                                </div>
+                                <div className="p-6 bg-guild-panel overflow-y-auto custom-scrollbar">
+                                    {manageSubTab === 'group' && (
+                                        <div className="space-y-4 animate-fade-in">
+                                            <div>
+                                                <label className="block text-sm text-guild-paper mb-1">建立新小隊 <span className="text-gray-500 text-xs">(支援批次，請用逗號或換行分隔)</span></label>
+                                                <div className="flex gap-2">
+                                                    <textarea rows="2" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="例如：獅鷲小隊, 獨角獸小隊..." className="flex-1 p-3 bg-guild-dark border border-guild-gold/50 rounded text-guild-paper focus:outline-none custom-scrollbar" />
+                                                    <button onClick={() => { if(newGroupName.trim()){ onAddGroup(newGroupName, manageClassId); setNewGroupName(''); } }} className="px-5 bg-blue-800 hover:bg-blue-700 text-white font-bold rounded transition shrink-0">成立</button>
+                                                </div>
+                                            </div>
+                                            <div className="border-t border-gray-700 pt-4 space-y-2">
+                                                {manageGroups.map(g => (
+                                                    <div key={g.id} className="flex items-center justify-between bg-guild-dark p-3 rounded border border-gray-700">
+                                                        <div>
+                                                            <span className="font-bold text-guild-paper">{g.name}</span>
+                                                            <span className="text-xs text-gray-500 ml-2">成員 {manageStudents.filter(s => s.groupId === g.id).length} 人</span>
+                                                        </div>
+                                                        <button onClick={() => setConfirmModal({type: 'deleteGroup', groupId: g.id, groupName: g.name})} className="text-red-500 hover:text-red-400 transition px-2"><i className="fa-solid fa-trash"></i></button>
+                                                    </div>
+                                                ))}
+                                                {manageGroups.length === 0 && <div className="text-gray-500 text-sm text-center py-6">本班級尚未建立任何小隊，請在上方新增。</div>}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {manageSubTab === 'student' && (
+                                        <div className="space-y-2 animate-fade-in">
+                                            {manageStudents.map(s => (
+                                                <div key={s.id} className="flex items-center justify-between bg-guild-dark p-3 rounded border border-gray-700">
+                                                    <div className="flex items-center gap-3 min-w-0">
+                                                        <AvatarDisplay student={s} size="w-9 h-9" showJob={false} />
+                                                        <div className="min-w-0">
+                                                            <div className="font-bold text-guild-paper truncate">{s.name} <span className="text-xs text-gray-500 font-normal">Lv.{s.level}</span></div>
+                                                            <div className="text-xs text-gray-500 truncate">{getGroupNameLocal(s.groupId)}</div>
+                                                        </div>
+                                                    </div>
+                                                    <button onClick={() => setConfirmModal({type: 'deleteStudent', studentId: s.id, studentName: s.name})} className="text-red-500 hover:text-red-400 transition px-2 shrink-0"><i className="fa-solid fa-trash"></i></button>
+                                                </div>
+                                            ))}
+                                            {manageStudents.length === 0 && <div className="text-gray-500 text-sm text-center py-6">本班級尚未有任何冒險者。</div>}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -2298,6 +2376,27 @@
                 addLog(`🛡️ 成立了新的冒險小隊：${names.join('、')}`, parseInt(classId));
             };
 
+            const handleDeleteGroup = (groupId) => {
+                const group = groups.find(g => g.id === groupId);
+                if (!group) return;
+                // 該小隊的學生改為「無小隊」，而不會一併被刪除
+                setStudents(prev => prev.map(s => s.groupId === groupId ? { ...s, groupId: null } : s));
+                setGroups(prev => prev.filter(g => g.id !== groupId));
+                setSquadBosses(prev => {
+                    const next = { ...prev };
+                    delete next[groupId];
+                    return next;
+                });
+                addLog(`🗑️ 解散了小隊：${group.name}（原成員已變為無小隊）`, group.classId);
+            };
+
+            const handleDeleteStudent = (studentId) => {
+                const student = students.find(s => s.id === studentId);
+                if (!student) return;
+                setStudents(prev => prev.filter(s => s.id !== studentId));
+                addLog(`🗑️ 已將冒險者 ${student.name} 從公會除名。`, student.classId);
+            };
+
             const handleAddStudent = (namesStr, classId, groupId) => {
                 const names = namesStr.split(/[,，\n、]+/).map(n => n.trim()).filter(n => n);
                 if (names.length === 0) return;
@@ -2589,7 +2688,7 @@
                     )}
 
                     <main className="flex-1 p-4 md:p-8 overflow-y-auto">
-                        {view === 'admin' && <AdminPanel students={students} classes={classes} onApprove={handleApproveCustomAvatar} onReject={handleRejectCustomAvatar} onArchiveClass={handleArchiveClass} onDeleteClass={handleDeleteClass} />}
+                        {view === 'admin' && <AdminPanel students={students} classes={classes} groups={groups} onApprove={handleApproveCustomAvatar} onReject={handleRejectCustomAvatar} onArchiveClass={handleArchiveClass} onDeleteClass={handleDeleteClass} onAddGroup={handleAddGroup} onDeleteGroup={handleDeleteGroup} onDeleteStudent={handleDeleteStudent} />}
                         {view === 'dashboard' && <Dashboard classId={currentClassId} groups={groups} students={students} logs={logs} />}
                         {view === 'roster' && <Roster classId={currentClassId} groups={groups} students={students} getGroup={getGroup} onOpenShop={setShopBuyerId} onOpenAvatarEditor={setEditingAvatarId} onAddGroup={handleAddGroup} onAddStudent={handleAddStudent} ruleItems={ruleItems} onAddRuleItem={handleAddRuleItem} onDeleteRuleItem={handleDeleteRuleItem} onApplyRule={handleApplyRule} />}
                         {view === 'quest' && <QuestBoard classId={currentClassId} students={students} groups={groups} squadBosses={squadBosses} guildBoss={guildBoss} onResult={handleQuestResult} onSpawnBoss={handleSpawnBoss} onBossAttack={handleBossAttack} />}
