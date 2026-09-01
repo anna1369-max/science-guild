@@ -54,8 +54,12 @@
         
         .panel { background-color: #2a2420; border: 1px solid #4a4036; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5); border-radius: 0.5rem; }
 
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        /* ↑ 修正：移除動畫中的 transform（即使是 translateY(0)）。
+           CSS 規則：任何非 none 的 transform 會讓該元素變成子孫 fixed 定位元素的「定位基準」，
+           導致所有 Modal 視窗（獎懲、招募、商店…）都被錨定在這個較小的容器內而不是整個瀏覽器視窗，
+           造成無論怎麼調整 max-h / vh 都還是會被裁切的問題。改成只用 opacity 淡入即可徹底解決。 */
         
         /* 基本浮動與震動 */
         @keyframes shakeRed {
@@ -513,10 +517,10 @@
             const [newStudentName, setNewStudentName] = useState('');
             const [newStudentGroupId, setNewStudentGroupId] = useState('');
             
-            // ★ 更新：獎懲處分系統
+            // ★ 更新：獎懲處分系統 (支援一次多人加扣分)
             const [showRuleModal, setShowRuleModal] = useState(false);
             const [ruleTab, setRuleTab] = useState('reward'); 
-            const [selectedRuleStudentId, setSelectedRuleStudentId] = useState('');
+            const [selectedRuleStudentIds, setSelectedRuleStudentIds] = useState([]);
             const [selectedRuleId, setSelectedRuleId] = useState('');
             const [newRName, setNewRName] = useState('');
             const [newRExp, setNewRExp] = useState('');
@@ -530,6 +534,12 @@
                 // 這裡我們把重置事件發送給上層 (其實直接寫在裡面也可以，但為求乾淨我們就在這裡做一個 event)
                 window.dispatchEvent(new CustomEvent('reset-pin', { detail: studentId }));
             };
+
+            const toggleRuleStudent = (id) => {
+                setSelectedRuleStudentIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+            };
+            const selectAllRuleStudents = () => setSelectedRuleStudentIds(branchStudents.map(s => s.id));
+            const clearAllRuleStudents = () => setSelectedRuleStudentIds([]);
 
             return (
                 <div className="max-w-7xl mx-auto animate-fade-in">
@@ -603,34 +613,48 @@
                         {branchStudents.length === 0 && <div className="col-span-full text-center py-16 text-gray-500 bg-guild-dark rounded border border-dashed border-gray-700">這裡目前空無一人，趕快點擊右上角「招募與編制」來增加冒險者吧！</div>}
                     </div>
 
-                    {/* ★ 獎勵與懲罰 Modal */}
+                    {/* ★ 獎勵與懲罰 Modal (支援一次多人加扣分) */}
                     {showRuleModal && (
-                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-                            <div className={`panel p-0 max-w-2xl w-full flex flex-col relative overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)] ${ruleTab === 'reward' ? 'border-green-600' : 'border-red-700'}`}>
-                                <button onClick={() => {setShowRuleModal(false); setSelectedRuleStudentId(''); setSelectedRuleId('');}} className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl transition hover:rotate-90 z-10"><i className="fa-solid fa-xmark"></i></button>
-                                
-                                <div className="flex border-b border-gray-700/50 bg-guild-dark">
+                        <div className="fixed inset-0 bg-black/80 flex p-2 sm:p-4 z-50 overflow-y-auto">
+                            <div className={`panel p-0 max-w-4xl w-full max-h-[95vh] flex flex-col relative overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)] m-auto ${ruleTab === 'reward' ? 'border-green-600' : 'border-red-700'}`}>
+                                <div className="flex items-stretch border-b border-gray-700/50 bg-guild-dark shrink-0">
                                     <button onClick={() => {setRuleTab('reward'); setSelectedRuleId('');}} className={`flex-1 py-4 font-bold transition flex items-center justify-center ${ruleTab === 'reward' ? 'bg-green-900/40 text-green-400 border-b-2 border-green-500' : 'text-gray-500 hover:text-gray-300'}`}><i className="fa-solid fa-gift mr-2"></i> 頒發獎勵</button>
                                     <button onClick={() => {setRuleTab('penalty'); setSelectedRuleId('');}} className={`flex-1 py-4 font-bold transition flex items-center justify-center ${ruleTab === 'penalty' ? 'bg-red-900/40 text-red-500 border-b-2 border-red-500' : 'text-gray-500 hover:text-gray-300'}`}><i className="fa-solid fa-gavel mr-2"></i> 紀律處分</button>
+                                    <button onClick={() => {setShowRuleModal(false); setSelectedRuleStudentIds([]); setSelectedRuleId('');}} title="關閉" className="w-16 shrink-0 flex items-center justify-center text-gray-400 hover:text-white hover:bg-red-900/50 transition border-l border-gray-700/50 text-xl"><i className="fa-solid fa-xmark"></i></button>
                                 </div>
 
-                                <div className="p-6 bg-guild-panel flex flex-col gap-6">
-                                    <div className="flex items-end gap-2">
-                                        <div className="flex-1">
-                                            <label className="block text-sm text-guild-paper mb-2 font-bold">1. 選擇指定的冒險者</label>
-                                            <select value={selectedRuleStudentId} onChange={e => setSelectedRuleStudentId(e.target.value)} className="w-full p-3 bg-guild-dark border border-gray-600 rounded text-guild-paper focus:outline-none">
-                                                <option value="">-- 請選擇冒險者 --</option>
-                                                {branchStudents.map(s => <option key={s.id} value={s.id}>{s.name} (Lv.{s.level})</option>)}
-                                            </select>
+                                <div className="p-6 bg-guild-panel flex flex-col gap-6 overflow-y-auto custom-scrollbar flex-1 min-h-0">
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                                            <label className="text-sm text-guild-paper font-bold">1. 選擇冒險者 <span className="text-xs text-gray-400 font-normal">(可複選，一次為多人加扣分)</span></label>
+                                            <div className="flex gap-3 text-xs">
+                                                <button onClick={selectAllRuleStudents} className="text-blue-400 hover:text-blue-300 underline">全選</button>
+                                                <button onClick={clearAllRuleStudents} className="text-gray-400 hover:text-gray-300 underline">清除</button>
+                                            </div>
                                         </div>
-                                        {selectedRuleStudentId && (
-                                            <button onClick={() => handleResetPin(selectedRuleStudentId)} className="p-3 bg-gray-700 hover:bg-gray-600 text-xs text-white rounded transition shadow" title="學生忘記密碼時使用">重置密碼為 0000</button>
-                                        )}
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-2 p-2 bg-guild-dark/50 rounded border border-gray-700">
+                                            {branchStudents.map(s => {
+                                                const checked = selectedRuleStudentIds.includes(s.id);
+                                                return (
+                                                    <div key={s.id} onClick={() => toggleRuleStudent(s.id)} className={`p-2 rounded border cursor-pointer text-sm flex items-center gap-2 transition ${checked ? 'border-blue-500 bg-blue-900/30 text-white' : 'border-gray-600 hover:border-gray-400 text-gray-300'}`}>
+                                                        <input type="checkbox" checked={checked} readOnly className="pointer-events-none accent-blue-500 shrink-0" />
+                                                        <span className="truncate">{s.name} <span className="text-gray-500 text-xs">Lv.{s.level}</span></span>
+                                                    </div>
+                                                );
+                                            })}
+                                            {branchStudents.length === 0 && <div className="col-span-full text-gray-500 text-sm">此分會尚無冒險者。</div>}
+                                        </div>
+                                        <div className="flex items-center justify-between mt-2">
+                                            <div className="text-xs text-gray-400">{selectedRuleStudentIds.length > 0 ? `已選擇 ${selectedRuleStudentIds.length} 位冒險者` : '尚未選擇任何冒險者'}</div>
+                                            {selectedRuleStudentIds.length === 1 && (
+                                                <button onClick={() => handleResetPin(selectedRuleStudentIds[0])} className="p-2 bg-gray-700 hover:bg-gray-600 text-xs text-white rounded transition shadow" title="學生忘記密碼時使用">重置密碼為 0000</button>
+                                            )}
+                                        </div>
                                     </div>
 
                                     <div>
                                         <label className="block text-sm text-guild-paper mb-2 font-bold">2. 選擇 {ruleTab === 'reward' ? '獎勵' : '違規'} 項目</label>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-40 overflow-y-auto custom-scrollbar pr-2">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-48 overflow-y-auto custom-scrollbar pr-2">
                                             {ruleItems.filter(i => i.type === ruleTab).map(item => (
                                                 <div key={item.id} onClick={() => setSelectedRuleId(item.id)} className={`panel p-3 border cursor-pointer relative transition ${selectedRuleId === item.id ? (ruleTab==='reward' ? 'border-green-500 bg-green-900/30' : 'border-red-500 bg-red-900/30') : 'border-gray-600 hover:border-gray-400 bg-guild-dark/50'}`}>
                                                     <div className="font-bold text-guild-paper text-sm pr-6 truncate">{item.name}</div>
@@ -655,19 +679,19 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div className={`p-4 border-t bg-guild-dark ${ruleTab === 'reward' ? 'border-green-900/50' : 'border-red-900/50'}`}>
+                                <div className={`p-4 border-t bg-guild-dark shrink-0 ${ruleTab === 'reward' ? 'border-green-900/50' : 'border-red-900/50'}`}>
                                     <button 
                                         onClick={() => {
-                                            if(!selectedRuleStudentId || !selectedRuleId) return alert("請選擇冒險者與項目！");
-                                            onApplyRule(selectedRuleStudentId, selectedRuleId);
+                                            if(selectedRuleStudentIds.length === 0 || !selectedRuleId) return alert("請選擇冒險者與項目！");
+                                            selectedRuleStudentIds.forEach(id => onApplyRule(id, selectedRuleId));
                                             setShowRuleModal(false);
-                                            setSelectedRuleStudentId('');
+                                            setSelectedRuleStudentIds([]);
                                             setSelectedRuleId('');
                                         }} 
-                                        disabled={!selectedRuleStudentId || !selectedRuleId} 
+                                        disabled={selectedRuleStudentIds.length === 0 || !selectedRuleId} 
                                         className={`w-full py-4 text-white font-extrabold rounded shadow-lg transition text-lg flex items-center justify-center disabled:bg-gray-800 disabled:text-gray-500 ${ruleTab === 'reward' ? 'bg-green-800 hover:bg-green-700' : 'bg-red-800 hover:bg-red-700'}`}
                                     >
-                                        <i className={`fa-solid ${ruleTab === 'reward' ? 'fa-gift' : 'fa-bolt'} mr-2`}></i> {ruleTab === 'reward' ? '確認頒發獎勵' : '執行紀律裁決'}
+                                        <i className={`fa-solid ${ruleTab === 'reward' ? 'fa-gift' : 'fa-bolt'} mr-2`}></i> {ruleTab === 'reward' ? `確認頒發獎勵${selectedRuleStudentIds.length > 1 ? `（${selectedRuleStudentIds.length} 人）` : ''}` : `執行紀律裁決${selectedRuleStudentIds.length > 1 ? `（${selectedRuleStudentIds.length} 人）` : ''}`}
                                     </button>
                                 </div>
                             </div>
@@ -675,14 +699,14 @@
                     )}
 
                     {showManageModal && (
-                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-                            <div className="panel p-0 max-w-lg w-full flex flex-col relative border-guild-gold overflow-hidden">
-                                <button onClick={() => setShowManageModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl transition hover:rotate-90 z-10"><i className="fa-solid fa-xmark"></i></button>
-                                <div className="flex bg-guild-dark border-b border-guild-gold/30">
+                        <div className="fixed inset-0 bg-black/80 flex p-4 z-50 overflow-y-auto">
+                            <div className="panel p-0 max-w-lg w-full max-h-[90vh] flex flex-col relative border-guild-gold overflow-hidden m-auto">
+                                <div className="flex items-stretch bg-guild-dark border-b border-guild-gold/30">
                                     <button onClick={() => setManageTab('student')} className={`flex-1 py-4 text-center font-bold transition ${manageTab === 'student' ? 'bg-guild-gold text-guild-dark' : 'text-gray-400 hover:bg-guild-gold/20'}`}>招募冒險者</button>
                                     <button onClick={() => setManageTab('group')} className={`flex-1 py-4 text-center font-bold transition ${manageTab === 'group' ? 'bg-guild-gold text-guild-dark' : 'text-gray-400 hover:bg-guild-gold/20'}`}>新增小隊</button>
+                                    <button onClick={() => setShowManageModal(false)} title="關閉" className="w-16 shrink-0 flex items-center justify-center text-gray-400 hover:text-white hover:bg-red-900/50 transition border-l border-guild-gold/30 text-xl"><i className="fa-solid fa-xmark"></i></button>
                                 </div>
-                                <div className="p-6 bg-guild-panel">
+                                <div className="p-6 bg-guild-panel overflow-y-auto custom-scrollbar">
                                     {manageTab === 'group' && (
                                         <div className="space-y-4 animate-fade-in">
                                             <h3 className="text-xl text-guild-gold font-bold mb-2">於本分會成立新小隊</h3>
@@ -787,8 +811,8 @@
             ];
 
             return (
-                <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-4 z-50">
-                    <div className="panel p-0 max-w-5xl w-full flex flex-col md:flex-row relative border-guild-gold shadow-[0_0_30px_rgba(197,159,68,0.3)]">
+                <div className="fixed inset-0 bg-black/85 flex p-4 z-50 overflow-y-auto">
+                    <div className="panel p-0 max-w-5xl w-full flex flex-col md:flex-row relative border-guild-gold shadow-[0_0_30px_rgba(197,159,68,0.3)] m-auto">
                         <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl transition hover:rotate-90 z-30"><i className="fa-solid fa-xmark"></i></button>
                         <div className="md:w-1/3 bg-guild-dark p-6 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-guild-gold/30">
                             <h2 className="text-xl font-bold text-guild-gold mb-6"><i className="fa-solid fa-scissors mr-2"></i>冒險者換裝室</h2>
@@ -882,12 +906,13 @@
             );
         };
 
-        const AdminPanel = ({ students, classes, groups, onApprove, onReject, onArchiveClass, onDeleteClass, onAddGroup, onDeleteGroup, onDeleteStudent }) => {
+        const AdminPanel = ({ students, classes, groups, onApprove, onReject, onArchiveClass, onDeleteClass, onAddGroup, onDeleteGroup, onDeleteStudent, onMoveStudent }) => {
             const [tab, setTab] = useState('avatar'); 
             const [confirmModal, setConfirmModal] = useState(null);
             const [manageClassId, setManageClassId] = useState(null);
             const [manageSubTab, setManageSubTab] = useState('group');
             const [newGroupName, setNewGroupName] = useState('');
+            const [reorderGroupId, setReorderGroupId] = useState(null);
             const pendingStudents = students.filter(s => s.avatar.customImageStatus === 'pending');
 
             const executeAction = () => {
@@ -946,7 +971,7 @@
                                     <div className="text-gray-400 text-sm mb-6">
                                         冒險者人數: <span className="text-guild-paper font-bold">{students.filter(s => s.classId === c.id).length}</span> 人
                                     </div>
-                                    <button onClick={() => { setManageClassId(c.id); setManageSubTab('group'); setNewGroupName(''); }} className="w-full py-2 mb-3 bg-purple-900 hover:bg-purple-800 border border-purple-600 text-white font-bold rounded shadow transition text-sm flex items-center justify-center">
+                                    <button onClick={() => { setManageClassId(c.id); setManageSubTab('group'); setNewGroupName(''); setReorderGroupId(null); }} className="w-full py-2 mb-3 bg-purple-900 hover:bg-purple-800 border border-purple-600 text-white font-bold rounded shadow transition text-sm flex items-center justify-center">
                                         <i className="fa-solid fa-people-group mr-2"></i> 管理小隊與冒險者
                                     </button>
                                     <div className="flex w-full gap-3 mt-auto">
@@ -964,8 +989,8 @@
                     )}
 
                     {confirmModal && (
-                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[100]">
-                            <div className={`panel p-6 max-w-md w-full text-center border shadow-2xl ${confirmModal.type === 'archive' ? 'border-yellow-500 shadow-yellow-900/50' : 'border-red-500 shadow-red-900/50'}`}>
+                        <div className="fixed inset-0 bg-black/80 flex p-4 z-[100] overflow-y-auto">
+                            <div className={`panel p-6 max-w-md w-full text-center border shadow-2xl m-auto ${confirmModal.type === 'archive' ? 'border-yellow-500 shadow-yellow-900/50' : 'border-red-500 shadow-red-900/50'}`}>
                                 <i className={`fa-solid ${confirmModal.type === 'archive' ? 'fa-box-archive text-yellow-500' : 'fa-triangle-exclamation text-red-500'} text-5xl mb-4 animate-bounce`}></i>
                                 <h3 className="text-2xl font-bold text-white mb-2">
                                     {confirmModal.type === 'archive' ? '出師封存確認'
@@ -995,9 +1020,9 @@
                     )}
 
                     {manageClassId && (
-                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[90]">
-                            <div className="panel p-0 max-w-2xl w-full flex flex-col relative border-guild-gold overflow-hidden max-h-[85vh]">
-                                <button onClick={() => setManageClassId(null)} className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl transition hover:rotate-90 z-10"><i className="fa-solid fa-xmark"></i></button>
+                        <div className="fixed inset-0 bg-black/80 flex p-4 z-[90] overflow-y-auto">
+                            <div className="panel p-0 max-w-2xl w-full flex flex-col relative border-guild-gold overflow-hidden max-h-[85vh] m-auto">
+                                <button onClick={() => { setManageClassId(null); setReorderGroupId(null); }} className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl transition hover:rotate-90 z-10"><i className="fa-solid fa-xmark"></i></button>
                                 <div className="p-6 pb-0">
                                     <h3 className="text-2xl font-bold text-guild-gold mb-1"><i className="fa-solid fa-people-group mr-2"></i>{manageClass?.name}</h3>
                                     <p className="text-xs text-gray-500 mb-4">在此可以直接建立/解散小隊，或將冒險者從公會除名，方便新班級一開始就能完整建置。</p>
@@ -1023,7 +1048,10 @@
                                                             <span className="font-bold text-guild-paper">{g.name}</span>
                                                             <span className="text-xs text-gray-500 ml-2">成員 {manageStudents.filter(s => s.groupId === g.id).length} 人</span>
                                                         </div>
-                                                        <button onClick={() => setConfirmModal({type: 'deleteGroup', groupId: g.id, groupName: g.name})} className="text-red-500 hover:text-red-400 transition px-2"><i className="fa-solid fa-trash"></i></button>
+                                                        <div className="flex items-center gap-1 shrink-0">
+                                                            <button onClick={() => setReorderGroupId(g.id)} className="text-blue-400 hover:text-blue-300 transition px-2" title="重新編排小隊成員"><i className="fa-solid fa-users-gear"></i></button>
+                                                            <button onClick={() => setConfirmModal({type: 'deleteGroup', groupId: g.id, groupName: g.name})} className="text-red-500 hover:text-red-400 transition px-2"><i className="fa-solid fa-trash"></i></button>
+                                                        </div>
                                                     </div>
                                                 ))}
                                                 {manageGroups.length === 0 && <div className="text-gray-500 text-sm text-center py-6">本班級尚未建立任何小隊，請在上方新增。</div>}
@@ -1051,6 +1079,44 @@
                             </div>
                         </div>
                     )}
+
+                    {/* ★ 重新編排特定小隊成員 Modal */}
+                    {reorderGroupId && (() => {
+                        const reorderGroup = manageGroups.find(g => g.id === reorderGroupId);
+                        if (!reorderGroup) return null;
+                        return (
+                            <div className="fixed inset-0 bg-black/80 flex p-4 z-[95] overflow-y-auto">
+                                <div className="panel p-0 max-w-lg w-full flex flex-col relative border-blue-500 overflow-hidden max-h-[85vh] m-auto">
+                                    <button onClick={() => setReorderGroupId(null)} className="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl transition hover:rotate-90 z-10"><i className="fa-solid fa-xmark"></i></button>
+                                    <div className="p-6 pb-4 bg-guild-dark border-b border-blue-500/30">
+                                        <h3 className="text-2xl font-bold text-blue-400 mb-1"><i className="fa-solid fa-users-gear mr-2"></i>重新編排【{reorderGroup.name}】成員</h3>
+                                        <p className="text-xs text-gray-500">勾選即可將該冒險者編入此小隊；取消勾選則將其移出（改為無小隊）。若冒險者原屬其他小隊，勾選後會直接改隸屬本小隊。</p>
+                                    </div>
+                                    <div className="p-6 bg-guild-panel overflow-y-auto custom-scrollbar space-y-2">
+                                        {manageStudents.map(s => {
+                                            const isMember = s.groupId === reorderGroupId;
+                                            return (
+                                                <label key={s.id} className={`flex items-center justify-between p-3 rounded border cursor-pointer transition ${isMember ? 'bg-blue-900/30 border-blue-500' : 'bg-guild-dark border-gray-700 hover:border-gray-500'}`}>
+                                                    <div className="flex items-center gap-3 min-w-0">
+                                                        <AvatarDisplay student={s} size="w-9 h-9" showJob={false} />
+                                                        <div className="min-w-0">
+                                                            <div className="font-bold text-guild-paper truncate">{s.name} <span className="text-xs text-gray-500 font-normal">Lv.{s.level}</span></div>
+                                                            <div className="text-xs text-gray-500 truncate">目前：{getGroupNameLocal(s.groupId)}</div>
+                                                        </div>
+                                                    </div>
+                                                    <input type="checkbox" checked={isMember} onChange={(e) => onMoveStudent(s.id, e.target.checked ? reorderGroupId : null)} className="w-5 h-5 accent-blue-500 shrink-0 ml-3" />
+                                                </label>
+                                            );
+                                        })}
+                                        {manageStudents.length === 0 && <div className="text-gray-500 text-sm text-center py-6">本班級尚未有任何冒險者。</div>}
+                                    </div>
+                                    <div className="p-4 border-t border-blue-900/50 bg-guild-dark text-right">
+                                        <button onClick={() => setReorderGroupId(null)} className="px-6 py-2 bg-blue-800 hover:bg-blue-700 text-white font-bold rounded transition">完成</button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </div>
             )
         };
@@ -1571,8 +1637,8 @@
             const effectiveMaxHp = buyer.maxHp + synergy.hpBonus;
 
             return (
-                <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-4 z-50">
-                    <div className="panel p-6 max-w-6xl w-full max-h-[90vh] flex flex-col relative border-guild-gold shadow-[0_0_30px_rgba(197,159,68,0.3)]">
+                <div className="fixed inset-0 bg-black/85 flex p-4 z-50 overflow-y-auto">
+                    <div className="panel p-6 max-w-6xl w-full max-h-[90vh] flex flex-col relative border-guild-gold shadow-[0_0_30px_rgba(197,159,68,0.3)] m-auto">
                         <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white text-3xl transition hover:rotate-90 z-10"><i className="fa-solid fa-xmark"></i></button>
                         <h2 className="text-3xl font-bold text-guild-gold border-b border-guild-gold/30 pb-3 mb-6"><i className="fa-solid fa-store mr-2"></i>道具與武器商行</h2>
                         <div className="flex flex-col md:flex-row gap-8 overflow-y-auto pr-2 custom-scrollbar">
@@ -2415,6 +2481,17 @@
                 addLog(`⚔️ 招募了新的冒險者：${names.join('、')}`, parseInt(classId));
             };
 
+            const handleMoveStudent = (studentId, newGroupId) => {
+                const student = students.find(s => s.id === studentId);
+                if (!student) return;
+                const targetGroupId = newGroupId ? parseInt(newGroupId) : null;
+                if (student.groupId === targetGroupId) return;
+                const oldGroupName = getGroup(student.groupId)?.name || '無小隊';
+                const newGroupName = targetGroupId ? (getGroup(targetGroupId)?.name || '未知小隊') : '無小隊';
+                setStudents(prev => prev.map(s => s.id === studentId ? { ...s, groupId: targetGroupId } : s));
+                addLog(`🔀 將冒險者 ${student.name} 從【${oldGroupName}】調動至【${newGroupName}】`, student.classId);
+            };
+
             const handleLogout = () => {
                 setCurrentClassId(null);
                 setShopBuyerId(null);
@@ -2688,7 +2765,7 @@
                     )}
 
                     <main className="flex-1 p-4 md:p-8 overflow-y-auto">
-                        {view === 'admin' && <AdminPanel students={students} classes={classes} groups={groups} onApprove={handleApproveCustomAvatar} onReject={handleRejectCustomAvatar} onArchiveClass={handleArchiveClass} onDeleteClass={handleDeleteClass} onAddGroup={handleAddGroup} onDeleteGroup={handleDeleteGroup} onDeleteStudent={handleDeleteStudent} />}
+                        {view === 'admin' && <AdminPanel students={students} classes={classes} groups={groups} onApprove={handleApproveCustomAvatar} onReject={handleRejectCustomAvatar} onArchiveClass={handleArchiveClass} onDeleteClass={handleDeleteClass} onAddGroup={handleAddGroup} onDeleteGroup={handleDeleteGroup} onDeleteStudent={handleDeleteStudent} onMoveStudent={handleMoveStudent} />}
                         {view === 'dashboard' && <Dashboard classId={currentClassId} groups={groups} students={students} logs={logs} />}
                         {view === 'roster' && <Roster classId={currentClassId} groups={groups} students={students} getGroup={getGroup} onOpenShop={setShopBuyerId} onOpenAvatarEditor={setEditingAvatarId} onAddGroup={handleAddGroup} onAddStudent={handleAddStudent} ruleItems={ruleItems} onAddRuleItem={handleAddRuleItem} onDeleteRuleItem={handleDeleteRuleItem} onApplyRule={handleApplyRule} />}
                         {view === 'quest' && <QuestBoard classId={currentClassId} students={students} groups={groups} squadBosses={squadBosses} guildBoss={guildBoss} onResult={handleQuestResult} onSpawnBoss={handleSpawnBoss} onBossAttack={handleBossAttack} />}
@@ -2700,8 +2777,8 @@
                     
                     {/* ★ 轉職視窗 (買卡後觸發) */}
                     {showJobModal && (
-                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-                            <div className="panel p-6 max-w-5xl w-full text-center border-guild-gold shadow-[0_0_40px_rgba(197,159,68,0.4)]">
+                        <div className="fixed inset-0 bg-black/80 flex p-4 z-50 overflow-y-auto">
+                            <div className="panel p-6 max-w-5xl w-full text-center border-guild-gold shadow-[0_0_40px_rgba(197,159,68,0.4)] m-auto">
                                 <h2 className="text-3xl font-bold text-guild-gold mb-2">🎉 {showJobModal.name} 準備轉職！</h2>
                                 <p className="mb-6 text-gray-300">歷經無數考驗與沉澱，請選擇你未來的專屬戰鬥之道。</p>
                                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
