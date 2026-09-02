@@ -54,6 +54,12 @@
         
         .panel { background-color: #2a2420; border: 1px solid #4a4036; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5); border-radius: 0.5rem; }
 
+        /* ★ 個人資料表列印專用樣式：列印時只顯示 .print-report-portal，其餘全部隱藏 */
+        @media print {
+            body > *:not(.print-report-portal) { display: none !important; }
+            .print-report-portal { position: static !important; background: white !important; }
+        }
+
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
         /* ↑ 修正：移除動畫中的 transform（即使是 translateY(0)）。
@@ -510,24 +516,30 @@
             );
         };
 
-        const Roster = ({ classId, groups, students, getGroup, onOpenShop, onAddGroup, onAddStudent, ruleItems, onAddRuleItem, onDeleteRuleItem, onApplyRule }) => {
+        const Roster = ({ classId, branchName, groups, students, getGroup, onOpenShop, onAddGroup, onAddStudent, ruleItems, onAddRuleItem, onDeleteRuleItem, onApplyRule, onApplyTeamRule }) => {
             const [showManageModal, setShowManageModal] = useState(false);
             const [manageTab, setManageTab] = useState('student'); 
             const [newGroupName, setNewGroupName] = useState('');
             const [newStudentName, setNewStudentName] = useState('');
             const [newStudentGroupId, setNewStudentGroupId] = useState('');
             
-            // ★ 更新：獎懲處分系統 (支援一次多人加扣分)
+            // ★ 更新：獎懲處分系統 (支援一次多人加扣分 + 小隊加扣分)
             const [showRuleModal, setShowRuleModal] = useState(false);
             const [ruleTab, setRuleTab] = useState('reward'); 
+            const [ruleTarget, setRuleTarget] = useState('individual'); // 'individual' | 'team'
             const [selectedRuleStudentIds, setSelectedRuleStudentIds] = useState([]);
+            const [selectedRuleGroupIds, setSelectedRuleGroupIds] = useState([]);
             const [selectedRuleId, setSelectedRuleId] = useState('');
             const [newRName, setNewRName] = useState('');
             const [newRExp, setNewRExp] = useState('');
             const [newRGold, setNewRGold] = useState('');
 
+            // ★ 新增：個人資料表 (列印/匯出)
+            const [reportStudentId, setReportStudentId] = useState(null);
+
             const branchStudents = students.filter(s => s.classId === classId);
             const branchGroups = groups.filter(g => g.classId === classId);
+            const reportStudent = reportStudentId ? branchStudents.find(s => s.id === reportStudentId) : null;
             
             const handleResetPin = (studentId) => {
                 if(!confirm('確定要將此學生的密碼重置為 0000 嗎？')) return;
@@ -541,11 +553,41 @@
             const selectAllRuleStudents = () => setSelectedRuleStudentIds(branchStudents.map(s => s.id));
             const clearAllRuleStudents = () => setSelectedRuleStudentIds([]);
 
+            const toggleRuleGroup = (id) => {
+                setSelectedRuleGroupIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+            };
+            const selectAllRuleGroups = () => setSelectedRuleGroupIds(branchGroups.map(g => g.id));
+            const clearAllRuleGroups = () => setSelectedRuleGroupIds([]);
+
+            // ★ 新增：匯出全班個人數據表 (CSV，可用 Excel 開啟)
+            const handleExportCSV = () => {
+                const header = ['姓名','所屬小隊','職業','等級','EXP','下一級所需EXP','金幣','HP','MaxHP'];
+                const rows = branchStudents.map(s => {
+                    const synergy = getGroupSynergy(s.groupId, students);
+                    const effMaxHp = s.maxHp + synergy.hpBonus;
+                    const groupName = getGroup(s.groupId)?.name || '無小隊';
+                    return [s.name, groupName, s.job, s.level, s.exp, s.level * 100, s.gold, s.hp, effMaxHp];
+                });
+                const csvContent = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+                const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${branchName || '冒險者'}_個人數據表_${new Date().toISOString().slice(0,10)}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+
             return (
                 <div className="max-w-7xl mx-auto animate-fade-in">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-guild-gold/30 pb-4 mb-6 gap-4">
                         <h2 className="text-3xl font-bold text-guild-gold">冒險者名冊</h2>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
+                            <button onClick={handleExportCSV} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded border border-gray-500 transition shadow flex items-center">
+                                <i className="fa-solid fa-file-arrow-down mr-2"></i> 匯出個人數據表
+                            </button>
                             <button onClick={() => setShowRuleModal(true)} className="px-4 py-2 bg-gradient-to-r from-green-800 to-red-900 hover:from-green-700 hover:to-red-800 text-white font-bold rounded transition shadow flex items-center border border-gray-500">
                                 <i className="fa-solid fa-scale-balanced mr-2"></i> 獎懲與紀律
                             </button>
@@ -606,6 +648,9 @@
                                         <button onClick={() => onOpenShop(s.id)} className="mt-3 w-full py-2 bg-guild-dark hover:bg-guild-gold hover:text-guild-dark text-guild-paper border border-gray-600 hover:border-guild-gold rounded text-xs transition font-bold">
                                             <i className="fa-solid fa-store mr-1"></i> 教師代開商行
                                         </button>
+                                        <button onClick={() => setReportStudentId(s.id)} className="mt-2 w-full py-2 bg-guild-dark hover:bg-blue-800 text-guild-paper border border-gray-600 hover:border-blue-500 rounded text-xs transition font-bold">
+                                            <i className="fa-solid fa-file-lines mr-1"></i> 個人資料表
+                                        </button>
                                     </div>
                                 </div>
                             )
@@ -613,20 +658,83 @@
                         {branchStudents.length === 0 && <div className="col-span-full text-center py-16 text-gray-500 bg-guild-dark rounded border border-dashed border-gray-700">這裡目前空無一人，趕快點擊右上角「招募與編制」來增加冒險者吧！</div>}
                     </div>
 
+                    {/* ★ 個人資料表 (可列印/匯出) */}
+                    {reportStudent && ReactDOM.createPortal(
+                        <div className="print-report-portal fixed inset-0 bg-black/80 flex p-4 z-[200] overflow-y-auto">
+                            <div className="panel !bg-white text-gray-900 p-0 max-w-2xl w-full max-h-[95vh] flex flex-col relative overflow-hidden m-auto border-gray-300">
+                                <div className="flex items-stretch justify-between bg-guild-gold/90 text-guild-dark print:hidden">
+                                    <div className="py-3 px-5 font-bold text-lg flex items-center"><i className="fa-solid fa-file-lines mr-2"></i> 個人資料表</div>
+                                    <div className="flex">
+                                        <button onClick={() => window.print()} className="px-5 flex items-center gap-2 hover:bg-guild-gold transition font-bold border-l border-guild-dark/20"><i className="fa-solid fa-print"></i> 列印 / 存成PDF</button>
+                                        <button onClick={() => setReportStudentId(null)} title="關閉" className="w-16 shrink-0 flex items-center justify-center hover:bg-red-700 hover:text-white transition border-l border-guild-dark/20 text-xl"><i className="fa-solid fa-xmark"></i></button>
+                                    </div>
+                                </div>
+                                <div className="p-8 overflow-y-auto custom-scrollbar">
+                                    <div className="text-center border-b-2 border-gray-300 pb-4 mb-6">
+                                        <div className="text-sm text-gray-500">{branchName || ''}・冒險者公會</div>
+                                        <h2 className="text-2xl font-extrabold">個人數據表</h2>
+                                    </div>
+                                    <div className="flex gap-6 items-center mb-6">
+                                        <div className="shrink-0 border-2 border-gray-300 rounded-lg p-2">
+                                            <AvatarDisplay student={reportStudent} size="w-24 h-24" />
+                                        </div>
+                                        <div className="flex-1 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                                            <div><span className="text-gray-500">姓名：</span><span className="font-bold text-lg">{reportStudent.name}</span></div>
+                                            <div><span className="text-gray-500">所屬小隊：</span><span className="font-bold">{getGroup(reportStudent.groupId)?.name || '無小隊'}</span></div>
+                                            <div><span className="text-gray-500">職業：</span><span className="font-bold">{reportStudent.job}</span></div>
+                                            <div><span className="text-gray-500">等級：</span><span className="font-bold">Lv.{reportStudent.level}</span></div>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-4 mb-6 text-center">
+                                        <div className="border border-gray-300 rounded p-3">
+                                            <div className="text-xs text-gray-500 mb-1">EXP 經驗值</div>
+                                            <div className="font-extrabold text-lg">{reportStudent.exp} / {reportStudent.level * 100}</div>
+                                        </div>
+                                        <div className="border border-gray-300 rounded p-3">
+                                            <div className="text-xs text-gray-500 mb-1">HP 生命值</div>
+                                            <div className="font-extrabold text-lg">{reportStudent.hp} / {reportStudent.maxHp + getGroupSynergy(reportStudent.groupId, students).hpBonus}</div>
+                                        </div>
+                                        <div className="border border-gray-300 rounded p-3">
+                                            <div className="text-xs text-gray-500 mb-1">持有金幣</div>
+                                            <div className="font-extrabold text-lg">{reportStudent.gold} G</div>
+                                        </div>
+                                    </div>
+                                    <div className="mb-6">
+                                        <div className="text-sm font-bold text-gray-600 mb-1">教師評語</div>
+                                        <div className="border border-gray-300 rounded h-24 p-2"></div>
+                                    </div>
+                                    <div className="flex justify-between text-sm text-gray-500 pt-4 border-t border-gray-300">
+                                        <div>列印日期：{new Date().toLocaleDateString('zh-TW')}</div>
+                                        <div>家長簽名：____________________</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>,
+                        document.body
+                    )}
+
                     {/* ★ 獎勵與懲罰 Modal (支援一次多人加扣分) */}
-                    {showRuleModal && (
-                        <div className="fixed inset-0 bg-black/80 flex p-2 sm:p-4 z-50 overflow-y-auto">
+                    {showRuleModal && ReactDOM.createPortal(
+                        <div className="fixed inset-0 bg-black/80 flex p-2 sm:p-4 z-[200] overflow-y-auto">
                             <div className={`panel p-0 max-w-4xl w-full max-h-[95vh] flex flex-col relative overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)] m-auto ${ruleTab === 'reward' ? 'border-green-600' : 'border-red-700'}`}>
                                 <div className="flex items-stretch border-b border-gray-700/50 bg-guild-dark shrink-0">
                                     <button onClick={() => {setRuleTab('reward'); setSelectedRuleId('');}} className={`flex-1 py-4 font-bold transition flex items-center justify-center ${ruleTab === 'reward' ? 'bg-green-900/40 text-green-400 border-b-2 border-green-500' : 'text-gray-500 hover:text-gray-300'}`}><i className="fa-solid fa-gift mr-2"></i> 頒發獎勵</button>
                                     <button onClick={() => {setRuleTab('penalty'); setSelectedRuleId('');}} className={`flex-1 py-4 font-bold transition flex items-center justify-center ${ruleTab === 'penalty' ? 'bg-red-900/40 text-red-500 border-b-2 border-red-500' : 'text-gray-500 hover:text-gray-300'}`}><i className="fa-solid fa-gavel mr-2"></i> 紀律處分</button>
-                                    <button onClick={() => {setShowRuleModal(false); setSelectedRuleStudentIds([]); setSelectedRuleId('');}} title="關閉" className="w-16 shrink-0 flex items-center justify-center text-gray-400 hover:text-white hover:bg-red-900/50 transition border-l border-gray-700/50 text-xl"><i className="fa-solid fa-xmark"></i></button>
+                                    <button onClick={() => {setShowRuleModal(false); setSelectedRuleStudentIds([]); setSelectedRuleGroupIds([]); setSelectedRuleId('');}} title="關閉" className="w-16 shrink-0 flex items-center justify-center text-gray-400 hover:text-white hover:bg-red-900/50 transition border-l border-gray-700/50 text-xl"><i className="fa-solid fa-xmark"></i></button>
                                 </div>
 
                                 <div className="p-6 bg-guild-panel flex flex-col gap-6 overflow-y-auto custom-scrollbar flex-1 min-h-0">
                                     <div>
+                                        <label className="text-sm text-guild-paper font-bold block mb-2">1. 選擇加扣分對象</label>
+                                        <div className="flex gap-2 mb-3">
+                                            <button onClick={() => setRuleTarget('individual')} className={`flex-1 py-2 rounded border font-bold text-sm transition flex items-center justify-center gap-2 ${ruleTarget === 'individual' ? 'bg-blue-800 border-blue-500 text-white' : 'bg-guild-dark/50 border-gray-600 text-gray-400 hover:border-gray-400'}`}><i className="fa-solid fa-user"></i> 個人加扣分</button>
+                                            <button onClick={() => setRuleTarget('team')} className={`flex-1 py-2 rounded border font-bold text-sm transition flex items-center justify-center gap-2 ${ruleTarget === 'team' ? 'bg-purple-800 border-purple-500 text-white' : 'bg-guild-dark/50 border-gray-600 text-gray-400 hover:border-gray-400'}`}><i className="fa-solid fa-flag"></i> 小隊加扣分</button>
+                                        </div>
+
+                                        {ruleTarget === 'individual' ? (
+                                        <React.Fragment>
                                         <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-                                            <label className="text-sm text-guild-paper font-bold">1. 選擇冒險者 <span className="text-xs text-gray-400 font-normal">(可複選，一次為多人加扣分)</span></label>
+                                            <label className="text-xs text-gray-400">選擇冒險者 (可複選，一次為多人加扣分)</label>
                                             <div className="flex gap-3 text-xs">
                                                 <button onClick={selectAllRuleStudents} className="text-blue-400 hover:text-blue-300 underline">全選</button>
                                                 <button onClick={clearAllRuleStudents} className="text-gray-400 hover:text-gray-300 underline">清除</button>
@@ -650,6 +758,31 @@
                                                 <button onClick={() => handleResetPin(selectedRuleStudentIds[0])} className="p-2 bg-gray-700 hover:bg-gray-600 text-xs text-white rounded transition shadow" title="學生忘記密碼時使用">重置密碼為 0000</button>
                                             )}
                                         </div>
+                                        </React.Fragment>
+                                        ) : (
+                                        <React.Fragment>
+                                        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                                            <label className="text-xs text-gray-400">選擇小隊 (可複選，積分直接加扣在小隊上，不影響隊員個人 EXP)</label>
+                                            <div className="flex gap-3 text-xs">
+                                                <button onClick={selectAllRuleGroups} className="text-blue-400 hover:text-blue-300 underline">全選</button>
+                                                <button onClick={clearAllRuleGroups} className="text-gray-400 hover:text-gray-300 underline">清除</button>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-2 p-2 bg-guild-dark/50 rounded border border-gray-700">
+                                            {branchGroups.map(g => {
+                                                const checked = selectedRuleGroupIds.includes(g.id);
+                                                return (
+                                                    <div key={g.id} onClick={() => toggleRuleGroup(g.id)} className={`p-2 rounded border cursor-pointer text-sm flex items-center gap-2 transition ${checked ? 'border-purple-500 bg-purple-900/30 text-white' : 'border-gray-600 hover:border-gray-400 text-gray-300'}`}>
+                                                        <input type="checkbox" checked={checked} readOnly className="pointer-events-none accent-purple-500 shrink-0" />
+                                                        <span className="truncate">{g.name} <span className="text-gray-500 text-xs">({g.score || 0}分)</span></span>
+                                                    </div>
+                                                );
+                                            })}
+                                            {branchGroups.length === 0 && <div className="col-span-full text-gray-500 text-sm">此分會尚無小隊。</div>}
+                                        </div>
+                                        <div className="text-xs text-gray-400 mt-2">{selectedRuleGroupIds.length > 0 ? `已選擇 ${selectedRuleGroupIds.length} 支小隊` : '尚未選擇任何小隊'}</div>
+                                        </React.Fragment>
+                                        )}
                                     </div>
 
                                     <div>
@@ -659,8 +792,8 @@
                                                 <div key={item.id} onClick={() => setSelectedRuleId(item.id)} className={`panel p-3 border cursor-pointer relative transition ${selectedRuleId === item.id ? (ruleTab==='reward' ? 'border-green-500 bg-green-900/30' : 'border-red-500 bg-red-900/30') : 'border-gray-600 hover:border-gray-400 bg-guild-dark/50'}`}>
                                                     <div className="font-bold text-guild-paper text-sm pr-6 truncate">{item.name}</div>
                                                     <div className={`font-bold mt-1 ${ruleTab === 'reward' ? 'text-green-400' : 'text-red-400'}`}>
-                                                        {ruleTab === 'reward' ? '+' : '-'} {item.exp} EXP
-                                                        {item.gold > 0 && <span className="ml-2 text-yellow-500 text-xs">+{item.gold} G</span>}
+                                                        {ruleTab === 'reward' ? '+' : '-'} {item.exp} {ruleTarget === 'team' ? '積分' : 'EXP'}
+                                                        {ruleTarget === 'individual' && item.gold > 0 && <span className="ml-2 text-yellow-500 text-xs">+{item.gold} G</span>}
                                                     </div>
                                                     <button onClick={(e) => { e.stopPropagation(); onDeleteRuleItem(item.id); }} className="absolute top-2 right-2 text-gray-500 hover:text-red-500 transition"><i className="fa-solid fa-trash"></i></button>
                                                 </div>
@@ -682,24 +815,31 @@
                                 <div className={`p-4 border-t bg-guild-dark shrink-0 ${ruleTab === 'reward' ? 'border-green-900/50' : 'border-red-900/50'}`}>
                                     <button 
                                         onClick={() => {
-                                            if(selectedRuleStudentIds.length === 0 || !selectedRuleId) return alert("請選擇冒險者與項目！");
-                                            selectedRuleStudentIds.forEach(id => onApplyRule(id, selectedRuleId));
+                                            if (ruleTarget === 'individual') {
+                                                if(selectedRuleStudentIds.length === 0 || !selectedRuleId) return alert("請選擇冒險者與項目！");
+                                                selectedRuleStudentIds.forEach(id => onApplyRule(id, selectedRuleId));
+                                            } else {
+                                                if(selectedRuleGroupIds.length === 0 || !selectedRuleId) return alert("請選擇小隊與項目！");
+                                                selectedRuleGroupIds.forEach(id => onApplyTeamRule(id, selectedRuleId));
+                                            }
                                             setShowRuleModal(false);
                                             setSelectedRuleStudentIds([]);
+                                            setSelectedRuleGroupIds([]);
                                             setSelectedRuleId('');
                                         }} 
-                                        disabled={selectedRuleStudentIds.length === 0 || !selectedRuleId} 
+                                        disabled={ruleTarget === 'individual' ? (selectedRuleStudentIds.length === 0 || !selectedRuleId) : (selectedRuleGroupIds.length === 0 || !selectedRuleId)} 
                                         className={`w-full py-4 text-white font-extrabold rounded shadow-lg transition text-lg flex items-center justify-center disabled:bg-gray-800 disabled:text-gray-500 ${ruleTab === 'reward' ? 'bg-green-800 hover:bg-green-700' : 'bg-red-800 hover:bg-red-700'}`}
                                     >
-                                        <i className={`fa-solid ${ruleTab === 'reward' ? 'fa-gift' : 'fa-bolt'} mr-2`}></i> {ruleTab === 'reward' ? `確認頒發獎勵${selectedRuleStudentIds.length > 1 ? `（${selectedRuleStudentIds.length} 人）` : ''}` : `執行紀律裁決${selectedRuleStudentIds.length > 1 ? `（${selectedRuleStudentIds.length} 人）` : ''}`}
+                                        <i className={`fa-solid ${ruleTab === 'reward' ? 'fa-gift' : 'fa-bolt'} mr-2`}></i> {ruleTarget === 'individual' ? (ruleTab === 'reward' ? `確認頒發獎勵${selectedRuleStudentIds.length > 1 ? `（${selectedRuleStudentIds.length} 人）` : ''}` : `執行紀律裁決${selectedRuleStudentIds.length > 1 ? `（${selectedRuleStudentIds.length} 人）` : ''}`) : (ruleTab === 'reward' ? `確認頒發小隊獎勵${selectedRuleGroupIds.length > 1 ? `（${selectedRuleGroupIds.length} 隊）` : ''}` : `執行小隊紀律裁決${selectedRuleGroupIds.length > 1 ? `（${selectedRuleGroupIds.length} 隊）` : ''}`)}
                                     </button>
                                 </div>
                             </div>
-                        </div>
+                        </div>,
+                        document.body
                     )}
 
-                    {showManageModal && (
-                        <div className="fixed inset-0 bg-black/80 flex p-4 z-50 overflow-y-auto">
+                    {showManageModal && ReactDOM.createPortal(
+                        <div className="fixed inset-0 bg-black/80 flex p-4 z-[200] overflow-y-auto">
                             <div className="panel p-0 max-w-lg w-full max-h-[90vh] flex flex-col relative border-guild-gold overflow-hidden m-auto">
                                 <div className="flex items-stretch bg-guild-dark border-b border-guild-gold/30">
                                     <button onClick={() => setManageTab('student')} className={`flex-1 py-4 text-center font-bold transition ${manageTab === 'student' ? 'bg-guild-gold text-guild-dark' : 'text-gray-400 hover:bg-guild-gold/20'}`}>招募冒險者</button>
@@ -736,7 +876,8 @@
                                     )}
                                 </div>
                             </div>
-                        </div>
+                        </div>,
+                        document.body
                     )}
                 </div>
             );
@@ -2314,6 +2455,32 @@
                 }
             };
 
+            // ★ 新增：小隊加扣分機制 (直接對小隊積分加減，不影響隊員個人 EXP/金幣)
+            const handleApplyTeamRule = (groupId, ruleId) => {
+                let updatedGroups = [...groups];
+                let gIndex = updatedGroups.findIndex(g => g.id === parseInt(groupId));
+                if(gIndex === -1) return;
+                const ruleItem = ruleItems.find(p => p.id === ruleId);
+                if(!ruleItem) return;
+
+                const group = { ...updatedGroups[gIndex] };
+                const pts = ruleItem.exp || 0;
+
+                if (ruleItem.type === 'penalty') {
+                    playAudio('penalty');
+                    group.score = Math.max(0, (group.score || 0) - pts);
+                    updatedGroups[gIndex] = group;
+                    setGroups(updatedGroups);
+                    addLog(`⚖️ 小隊裁決：【${group.name}】因為【${ruleItem.name}】被扣除了 ${pts} 積分！`, group.classId);
+                } else {
+                    playAudio('win');
+                    group.score = (group.score || 0) + pts;
+                    updatedGroups[gIndex] = group;
+                    setGroups(updatedGroups);
+                    addLog(`🏆 小隊獎勵：【${group.name}】因為【${ruleItem.name}】獲得了 ${pts} 積分！`, group.classId);
+                }
+            };
+
             const handleAddRuleItem = (type, name, exp, gold) => {
                 const newItem = { id: Date.now(), type, name, exp: parseInt(exp)||0, gold: parseInt(gold)||0 };
                 setRuleItems([...ruleItems, newItem]);
@@ -2767,7 +2934,7 @@
                     <main className="flex-1 p-4 md:p-8 overflow-y-auto">
                         {view === 'admin' && <AdminPanel students={students} classes={classes} groups={groups} onApprove={handleApproveCustomAvatar} onReject={handleRejectCustomAvatar} onArchiveClass={handleArchiveClass} onDeleteClass={handleDeleteClass} onAddGroup={handleAddGroup} onDeleteGroup={handleDeleteGroup} onDeleteStudent={handleDeleteStudent} onMoveStudent={handleMoveStudent} />}
                         {view === 'dashboard' && <Dashboard classId={currentClassId} groups={groups} students={students} logs={logs} />}
-                        {view === 'roster' && <Roster classId={currentClassId} groups={groups} students={students} getGroup={getGroup} onOpenShop={setShopBuyerId} onOpenAvatarEditor={setEditingAvatarId} onAddGroup={handleAddGroup} onAddStudent={handleAddStudent} ruleItems={ruleItems} onAddRuleItem={handleAddRuleItem} onDeleteRuleItem={handleDeleteRuleItem} onApplyRule={handleApplyRule} />}
+                        {view === 'roster' && <Roster classId={currentClassId} branchName={currentClassId === 'admin' ? '全公會管理中心' : getClassObj(currentClassId)?.name} groups={groups} students={students} getGroup={getGroup} onOpenShop={setShopBuyerId} onOpenAvatarEditor={setEditingAvatarId} onAddGroup={handleAddGroup} onAddStudent={handleAddStudent} ruleItems={ruleItems} onAddRuleItem={handleAddRuleItem} onDeleteRuleItem={handleDeleteRuleItem} onApplyRule={handleApplyRule} onApplyTeamRule={handleApplyTeamRule} />}
                         {view === 'quest' && <QuestBoard classId={currentClassId} students={students} groups={groups} squadBosses={squadBosses} guildBoss={guildBoss} onResult={handleQuestResult} onSpawnBoss={handleSpawnBoss} onBossAttack={handleBossAttack} />}
                     </main>
 
