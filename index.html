@@ -817,10 +817,10 @@
                                         onClick={() => {
                                             if (ruleTarget === 'individual') {
                                                 if(selectedRuleStudentIds.length === 0 || !selectedRuleId) return alert("請選擇冒險者與項目！");
-                                                selectedRuleStudentIds.forEach(id => onApplyRule(id, selectedRuleId));
+                                                onApplyRule(selectedRuleStudentIds, selectedRuleId);
                                             } else {
                                                 if(selectedRuleGroupIds.length === 0 || !selectedRuleId) return alert("請選擇小隊與項目！");
-                                                selectedRuleGroupIds.forEach(id => onApplyTeamRule(id, selectedRuleId));
+                                                onApplyTeamRule(selectedRuleGroupIds, selectedRuleId);
                                             }
                                             setShowRuleModal(false);
                                             setSelectedRuleStudentIds([]);
@@ -2391,94 +2391,100 @@
             };
 
             // ★ 更新：綜合的獎懲執行邏輯 (加扣分與金幣)
-            const handleApplyRule = (studentId, ruleId) => {
+            // ★ 修正：一次處理整批學生，避免多選時互相覆蓋更新
+            const handleApplyRule = (studentIds, ruleId) => {
+                const ids = Array.isArray(studentIds) ? studentIds : [studentIds];
                 let updatedStudents = [...students];
                 let updatedGroups = [...groups];
-                let sIndex = updatedStudents.findIndex(s => s.id === parseInt(studentId));
-                if(sIndex === -1) return;
-
-                let student = { ...updatedStudents[sIndex] };
-                let gIndex = updatedGroups.findIndex(g => g.id === student.groupId);
                 const ruleItem = ruleItems.find(p => p.id === ruleId);
                 if(!ruleItem) return;
+                const logsToAdd = [];
 
-                if (ruleItem.type === 'penalty') {
-                    playAudio('penalty'); // ★ 處罰音效
-                    const pts = ruleItem.exp || 0;
-                    student.exp -= pts;
+                ids.forEach(studentId => {
+                    let sIndex = updatedStudents.findIndex(s => s.id === parseInt(studentId));
+                    if(sIndex === -1) return;
 
-                    while(student.exp < 0 && student.level > 1) {
-                        student.level -= 1;
-                        student.maxHp -= 5;
-                        student.exp += getExpReq(student.level);
-                    }
-                    if (student.exp < 0) student.exp = 0; 
-                    
-                    const synergy = getGroupSynergy(student.groupId, updatedStudents);
-                    const effMaxHp = student.maxHp + synergy.hpBonus;
-                    if (student.hp > effMaxHp) student.hp = effMaxHp;
+                    let student = { ...updatedStudents[sIndex] };
+                    let gIndex = updatedGroups.findIndex(g => g.id === student.groupId);
 
-                    updatedStudents[sIndex] = student;
-                    if(gIndex !== -1) updatedGroups[gIndex].score = Math.max(0, updatedGroups[gIndex].score - pts);
+                    if (ruleItem.type === 'penalty') {
+                        const pts = ruleItem.exp || 0;
+                        student.exp -= pts;
 
-                    setStudents(updatedStudents);
-                    setGroups(updatedGroups);
-
-                    addLog(`⚖️ 紀律裁決：${student.name} 因為【${ruleItem.name}】被扣除了 ${pts} EXP！`, student.classId);
-                } else {
-                    playAudio('win'); // ★ 獎勵音效
-                    const expReward = ruleItem.exp || 0;
-                    const goldReward = ruleItem.gold || 0;
-                    
-                    student.exp += expReward;
-                    student.gold += goldReward;
-                    if(gIndex !== -1) updatedGroups[gIndex].score += expReward;
-                    
-                    let reqExp = getExpReq(student.level);
-                    let leveledUp = false;
-                    while (student.exp >= reqExp) {
-                        student.exp -= reqExp;
-                        student.level += 1;
-                        student.maxHp += 5;
+                        while(student.exp < 0 && student.level > 1) {
+                            student.level -= 1;
+                            student.maxHp -= 5;
+                            student.exp += getExpReq(student.level);
+                        }
+                        if (student.exp < 0) student.exp = 0; 
+                        
                         const synergy = getGroupSynergy(student.groupId, updatedStudents);
-                        student.hp = student.maxHp + synergy.hpBonus; 
-                        leveledUp = true;
-                        reqExp = getExpReq(student.level);
+                        const effMaxHp = student.maxHp + synergy.hpBonus;
+                        if (student.hp > effMaxHp) student.hp = effMaxHp;
+
+                        updatedStudents[sIndex] = student;
+                        if(gIndex !== -1) updatedGroups[gIndex] = { ...updatedGroups[gIndex], score: Math.max(0, (updatedGroups[gIndex].score||0) - pts) };
+
+                        logsToAdd.push({ msg: `⚖️ 紀律裁決：${student.name} 因為【${ruleItem.name}】被扣除了 ${pts} EXP！`, classId: student.classId });
+                    } else {
+                        const expReward = ruleItem.exp || 0;
+                        const goldReward = ruleItem.gold || 0;
+                        
+                        student.exp += expReward;
+                        student.gold += goldReward;
+                        if(gIndex !== -1) updatedGroups[gIndex] = { ...updatedGroups[gIndex], score: (updatedGroups[gIndex].score||0) + expReward };
+                        
+                        let reqExp = getExpReq(student.level);
+                        let leveledUp = false;
+                        while (student.exp >= reqExp) {
+                            student.exp -= reqExp;
+                            student.level += 1;
+                            student.maxHp += 5;
+                            const synergy = getGroupSynergy(student.groupId, updatedStudents);
+                            student.hp = student.maxHp + synergy.hpBonus; 
+                            leveledUp = true;
+                            reqExp = getExpReq(student.level);
+                        }
+
+                        updatedStudents[sIndex] = student;
+                        logsToAdd.push({ msg: `🎁 獎勵頒發：${student.name} 因為【${ruleItem.name}】獲得了 ${expReward} EXP 與 ${goldReward} G！`, classId: student.classId });
+                        if(leveledUp) logsToAdd.push({ msg: `🆙 ${student.name} 升級到了等級 ${student.level}！`, classId: student.classId });
                     }
+                });
 
-                    updatedStudents[sIndex] = student;
-                    setStudents(updatedStudents);
-                    setGroups(updatedGroups);
-
-                    addLog(`🎁 獎勵頒發：${student.name} 因為【${ruleItem.name}】獲得了 ${expReward} EXP 與 ${goldReward} G！`, student.classId);
-                    if(leveledUp) addLog(`🆙 ${student.name} 升級到了等級 ${student.level}！`, student.classId);
-                }
+                playAudio(ruleItem.type === 'penalty' ? 'penalty' : 'win');
+                setStudents(updatedStudents);
+                setGroups(updatedGroups);
+                logsToAdd.forEach(l => addLog(l.msg, l.classId));
             };
 
-            // ★ 新增：小隊加扣分機制 (直接對小隊積分加減，不影響隊員個人 EXP/金幣)
-            const handleApplyTeamRule = (groupId, ruleId) => {
+            // ★ 更新：小隊加扣分機制 (直接對小隊積分加減，不影響隊員個人 EXP/金幣；一次處理整批小隊，避免多選時互相覆蓋)
+            const handleApplyTeamRule = (groupIds, ruleId) => {
+                const ids = Array.isArray(groupIds) ? groupIds : [groupIds];
                 let updatedGroups = [...groups];
-                let gIndex = updatedGroups.findIndex(g => g.id === parseInt(groupId));
-                if(gIndex === -1) return;
                 const ruleItem = ruleItems.find(p => p.id === ruleId);
                 if(!ruleItem) return;
+                const logsToAdd = [];
 
-                const group = { ...updatedGroups[gIndex] };
-                const pts = ruleItem.exp || 0;
+                ids.forEach(groupId => {
+                    let gIndex = updatedGroups.findIndex(g => g.id === parseInt(groupId));
+                    if(gIndex === -1) return;
+                    const group = { ...updatedGroups[gIndex] };
+                    const pts = ruleItem.exp || 0;
 
-                if (ruleItem.type === 'penalty') {
-                    playAudio('penalty');
-                    group.score = Math.max(0, (group.score || 0) - pts);
+                    if (ruleItem.type === 'penalty') {
+                        group.score = Math.max(0, (group.score || 0) - pts);
+                        logsToAdd.push({ msg: `⚖️ 小隊裁決：【${group.name}】因為【${ruleItem.name}】被扣除了 ${pts} 積分！`, classId: group.classId });
+                    } else {
+                        group.score = (group.score || 0) + pts;
+                        logsToAdd.push({ msg: `🏆 小隊獎勵：【${group.name}】因為【${ruleItem.name}】獲得了 ${pts} 積分！`, classId: group.classId });
+                    }
                     updatedGroups[gIndex] = group;
-                    setGroups(updatedGroups);
-                    addLog(`⚖️ 小隊裁決：【${group.name}】因為【${ruleItem.name}】被扣除了 ${pts} 積分！`, group.classId);
-                } else {
-                    playAudio('win');
-                    group.score = (group.score || 0) + pts;
-                    updatedGroups[gIndex] = group;
-                    setGroups(updatedGroups);
-                    addLog(`🏆 小隊獎勵：【${group.name}】因為【${ruleItem.name}】獲得了 ${pts} 積分！`, group.classId);
-                }
+                });
+
+                playAudio(ruleItem.type === 'penalty' ? 'penalty' : 'win');
+                setGroups(updatedGroups);
+                logsToAdd.forEach(l => addLog(l.msg, l.classId));
             };
 
             const handleAddRuleItem = (type, name, exp, gold) => {
