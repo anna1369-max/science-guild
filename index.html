@@ -365,6 +365,10 @@
             return { active, name: active ? name : '', tags, expGoldMult, dmgRed, hpBonus, dodgeChance, healAmount, desc: descArr.join(' | ') };
         };
 
+        // ★ 真實累積 EXP：跟升級門檻(等級×100)完全對應，不是任意的固定倍率
+        // 升到 L 級總共需要 100+200+...+(L-1)*100 = 50*L*(L-1)，再加上目前這一級累積的 EXP
+        const getTotalExp = (student) => 50 * student.level * (student.level - 1) + student.exp;
+
         const AvatarDisplay = ({ student, size = "w-16 h-16", showJob = true, previewPending = false }) => {
             if (!student || !student.avatar) return null;
             const { avatar, job } = student;
@@ -496,7 +500,7 @@
                                                 <div className="text-xs text-gray-400">Lv.{s.level} {s.job}</div>
                                             </div>
                                         </div>
-                                        <div className="text-guild-gold font-bold">{(s.level - 1) * 1000 + s.exp} <span className="text-xs text-gray-500">總分</span></div>
+                                        <div className="text-guild-gold font-bold">{getTotalExp(s)} <span className="text-xs text-gray-500">累積EXP</span></div>
                                     </div>
                                 ))}
                                 {branchStudents.length === 0 && <div className="text-gray-500 text-center py-4">尚無冒險者資料</div>}
@@ -2844,7 +2848,7 @@
                                     <div>
                                         <div className="text-blue-400 text-sm mb-1">{groupName}</div>
                                         <h2 className="text-4xl font-bold text-white mb-2">{student.name} <span className="text-xl text-gray-400 font-normal ml-2">Lv.{student.level} {student.job}</span></h2>
-                                        <div className="text-guild-gold font-bold text-lg"><i className="fa-solid fa-coins mr-1"></i> {student.gold} G &nbsp; | &nbsp; <span className="text-gray-400 font-normal text-sm">公會總分: {(student.level-1)*1000 + student.exp}</span></div>
+                                        <div className="text-guild-gold font-bold text-lg"><i className="fa-solid fa-coins mr-1"></i> {student.gold} G &nbsp; | &nbsp; <span className="text-gray-400 font-normal text-sm">累積EXP: {getTotalExp(student)}</span></div>
                                     </div>
 
                                     <div className="space-y-4 bg-guild-dark p-6 rounded-lg border border-gray-700">
