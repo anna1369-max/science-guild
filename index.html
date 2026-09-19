@@ -234,11 +234,22 @@
         };
 
         const MONSTERS = [
-            { id: 'm1', name: '史萊姆', diff: '容易', exp: 20, gold: 10, dmg: 2, icon: 'fa-disease', color: 'text-green-400' },
-            { id: 'm2', name: '哥布林', diff: '中等', exp: 50, gold: 25, dmg: 5, icon: 'fa-skull', color: 'text-yellow-500' },
-            { id: 'm3', name: '地獄犬', diff: '困難', exp: 120, gold: 50, dmg: 10, icon: 'fa-dog', color: 'text-red-500' },
-            { id: 'm4', name: '遠古巨龍', diff: '魔王', exp: 300, gold: 150, dmg: 999, icon: 'fa-dragon', color: 'text-purple-500' }
+            { id: 'm1', name: '史萊姆', diff: '容易', exp: 20, gold: 10, dmg: 2, icon: 'fa-disease', color: 'text-green-400', weight: 40 },
+            { id: 'm2', name: '哥布林', diff: '中等', exp: 50, gold: 25, dmg: 5, icon: 'fa-skull', color: 'text-yellow-500', weight: 30 },
+            { id: 'm3', name: '地獄犬', diff: '困難', exp: 120, gold: 50, dmg: 10, icon: 'fa-dog', color: 'text-red-500', weight: 20 },
+            { id: 'm4', name: '遠古巨龍', diff: '魔王', exp: 300, gold: 150, dmg: 999, icon: 'fa-dragon', color: 'text-purple-500', weight: 10 }
         ];
+
+        // ★ 加權隨機抽取：依照每個項目的 weight 比例決定被抽到的機率（weight 加總不需要剛好等於 100，函式會自動依比例換算）
+        const pickWeighted = (list) => {
+            const totalWeight = list.reduce((sum, item) => sum + (item.weight || 1), 0);
+            let r = Math.random() * totalWeight;
+            for (const item of list) {
+                r -= (item.weight || 1);
+                if (r <= 0) return item;
+            }
+            return list[list.length - 1];
+        };
 
         const BOSS_MONSTERS = [
             { id: 'sb1', type: 'squad', name: '迷宮巨石魔', diff: '迷宮魔王', exp: 1000, gold: 500, maxHp: 300, dmg: 10, icon: 'fa-cubes', color: 'text-gray-400' },
@@ -520,7 +531,7 @@
             );
         };
 
-        const Roster = ({ classId, branchName, groups, students, getGroup, onOpenShop, onAddGroup, onAddStudent, ruleItems, onAddRuleItem, onDeleteRuleItem, onApplyRule, onApplyTeamRule }) => {
+        const Roster = ({ classId, branchName, groups, students, getGroup, onOpenShop, onAddGroup, onAddStudent, ruleItems, onAddRuleItem, onDeleteRuleItem, onApplyRule, onApplyTeamRule, lastAction, onUndoLastAction }) => {
             const [showManageModal, setShowManageModal] = useState(false);
             const [manageTab, setManageTab] = useState('student'); 
             const [newGroupName, setNewGroupName] = useState('');
@@ -600,6 +611,15 @@
                             </button>
                         </div>
                     </div>
+
+                    {lastAction && lastAction.classId === classId && (
+                        <div className="mb-6 p-4 bg-blue-900/30 border border-blue-500/50 rounded-lg flex items-center justify-between gap-4 flex-wrap">
+                            <div className="text-sm text-blue-200"><i className="fa-solid fa-clock-rotate-left mr-2"></i>剛剛執行了：<span className="font-bold">{lastAction.description}</span></div>
+                            <button onClick={onUndoLastAction} className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white font-bold rounded shadow transition flex items-center gap-2 shrink-0">
+                                <i className="fa-solid fa-rotate-left"></i> 撤銷上一步（加錯了）
+                            </button>
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                         {branchStudents.map(s => {
@@ -1268,7 +1288,7 @@
             )
         };
 
-        const QuestBoard = ({ classId, students, groups, squadBosses, guildBoss, onResult, onSpawnBoss, onBossAttack }) => {
+        const QuestBoard = ({ classId, students, groups, squadBosses, guildBoss, onResult, onSpawnBoss, onBossAttack, dailyDrawn, onRecordDraw, onResetDailyDrawn }) => {
             const [tab, setTab] = useState('normal'); 
             const [aiTopic, setAiTopic] = useState('');
             const [isGenerating, setIsGenerating] = useState(false);
@@ -1300,6 +1320,15 @@
             if (tab === 'squad' && selectedGroupId) {
                 availableStudents = activeStudents.filter(s => s.groupId === parseInt(selectedGroupId));
             }
+
+            // ★ 抽人「當日抽過不再抽，隔日重置」：從候選名單裡排除今天已經抽過的人；若全部抽過了則自動開新的一輪
+            const getTodayStrLocal = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; };
+            const drawnRecord = dailyDrawn && dailyDrawn[classId];
+            const drawnTodayIds = (drawnRecord && drawnRecord.date === getTodayStrLocal()) ? drawnRecord.ids : [];
+            const getEligiblePool = (pool) => {
+                const filtered = pool.filter(s => !drawnTodayIds.includes(s.id));
+                return filtered.length > 0 ? filtered : pool;
+            };
 
             const activeBoss = tab === 'squad' ? squadBosses[selectedGroupId] : tab === 'guild' ? guildBoss : drawnMonster;
 
@@ -1381,27 +1410,36 @@
 
             const spinStudentOnly = () => {
                 if (availableStudents.length === 0) return alert('小隊中沒有存活的冒險者可以出擊！');
+                const pool = getEligiblePool(availableStudents);
                 setIsSpinningStudent(true);
                 let newSReel = [];
-                for(let i=0; i<TOTAL_ITEMS; i++) newSReel.push(availableStudents[Math.floor(Math.random() * availableStudents.length)]);
+                for(let i=0; i<TOTAL_ITEMS; i++) newSReel.push(pool[Math.floor(Math.random() * pool.length)]);
                 setReelStudents(newSReel);
                 setTimeout(() => {
                     setIsSpinningStudent(false);
-                    setSelectedStudent(newSReel[TOTAL_ITEMS-1].id.toString());
+                    const picked = newSReel[TOTAL_ITEMS-1];
+                    setSelectedStudent(picked.id.toString());
+                    onRecordDraw(classId, picked.id);
                 }, SPIN_DURATION);
             };
 
             const handleDrawStudentAndSpin = () => {
                 if (activeStudents.length === 0) return alert('目前沒有可指派的冒險者！');
+                const pool = getEligiblePool(activeStudents);
                 setIsSpinningStudent(true); setIsSpinningMonster(true); setDrawnMonster(null); setCombatAnim({ student: '', monster: '' }); setVfx({ student: null, monster: null, studentLevel: 1 });
                 let newSReel = []; let newMReel = [];
-                const currentSelectedObj = activeStudents.find(s => s.id === parseInt(selectedStudent)) || activeStudents[0];
+                const currentSelectedObj = activeStudents.find(s => s.id === parseInt(selectedStudent)) || pool[0];
                 for(let i=0; i<TOTAL_ITEMS; i++) {
-                    if(i === 0) newSReel.push(currentSelectedObj); else newSReel.push(activeStudents[Math.floor(Math.random() * activeStudents.length)]);
-                    newMReel.push(MONSTERS[Math.floor(Math.random() * MONSTERS.length)]);
+                    if(i === 0) newSReel.push(currentSelectedObj); else newSReel.push(pool[Math.floor(Math.random() * pool.length)]);
+                    newMReel.push(pickWeighted(MONSTERS));
                 }
                 setReelStudents(newSReel); setReelMonsters(newMReel);
-                setTimeout(() => { setIsSpinningStudent(false); setSelectedStudent(newSReel[TOTAL_ITEMS - 1].id.toString()); }, SPIN_DURATION);
+                setTimeout(() => {
+                    setIsSpinningStudent(false);
+                    const picked = newSReel[TOTAL_ITEMS - 1];
+                    setSelectedStudent(picked.id.toString());
+                    onRecordDraw(classId, picked.id);
+                }, SPIN_DURATION);
                 setTimeout(() => { setIsSpinningMonster(false); setDrawnMonster(newMReel[TOTAL_ITEMS - 1]); }, 3000);
             };
 
@@ -1409,7 +1447,7 @@
                 if (!selectedStudent) return alert('請先選擇接受任務的冒險者！');
                 setIsSpinningMonster(true); setDrawnMonster(null); setCombatAnim({ student: '', monster: '' }); setVfx({ student: null, monster: null, studentLevel: 1 });
                 let newMReel = [];
-                for(let i=0; i<TOTAL_ITEMS; i++) newMReel.push(MONSTERS[Math.floor(Math.random() * MONSTERS.length)]);
+                for(let i=0; i<TOTAL_ITEMS; i++) newMReel.push(pickWeighted(MONSTERS));
                 setReelMonsters(newMReel);
                 setTimeout(() => { setIsSpinningMonster(false); setDrawnMonster(newMReel[TOTAL_ITEMS - 1]); }, 3000);
             };
@@ -1583,6 +1621,15 @@
                             {(tab === 'squad' || tab === 'guild') && activeBoss && !isSpinningStudent && !isFighting && (
                                 <div className="mt-4 text-center">
                                     <button onClick={spinStudentOnly} disabled={availableStudents.length===0} className="px-6 py-2 bg-indigo-700 hover:bg-indigo-600 disabled:bg-gray-700 text-white font-bold rounded shadow transition"><i className="fa-solid fa-user-ninja mr-2"></i> 隨機指派出擊</button>
+                                </div>
+                            )}
+
+                            {availableStudents.length > 0 && (
+                                <div className="mt-3 flex items-center justify-between text-xs text-gray-400 flex-wrap gap-2">
+                                    <span><i className="fa-solid fa-list-check mr-1"></i>今日已抽選：{availableStudents.filter(s => drawnTodayIds.includes(s.id)).length} / {availableStudents.length} 位（抽過的人隔天會自動重置，也可以手動重設）</span>
+                                    {drawnTodayIds.length > 0 && (
+                                        <button onClick={() => onResetDailyDrawn(classId)} className="text-blue-400 hover:text-blue-300 underline shrink-0">重設今日名單</button>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -1908,6 +1955,8 @@
             const [squadBosses, setSquadBosses] = useState({});
             const [guildBoss, setGuildBoss] = useState(null);
             const [ruleItems, setRuleItems] = useState([]);
+            const [dailyDrawn, setDailyDrawn] = useState({}); // ★ 抽人「當日抽過不再抽」紀錄：{ [classId]: { date, ids: [] } }
+            const [lastAction, setLastAction] = useState(null); // ★ 加錯撤銷：{ students, groups, description, classId } 只保留最近一次
             
             // 雲端連線狀態與阻斷機制
             const [user, setUser] = useState(null);
@@ -2030,6 +2079,7 @@
                         setLogs(data.logs || []);
                         setSquadBosses(data.squadBosses || {});
                         setGuildBoss(data.guildBoss || null);
+                        setDailyDrawn(data.dailyDrawn || {});
                         
                         // 相容舊版扣分資料轉換為新版獎懲系統
                         let loadedRules = data.ruleItems || data.penaltyItems;
@@ -2064,6 +2114,7 @@
                 const savedSquadBosses = localStorage.getItem('guild_squad_bosses');
                 const savedGuildBoss = localStorage.getItem('guild_guild_boss');
                 const savedRuleItems = localStorage.getItem('guild_rule_items') || localStorage.getItem('guild_penalty_items');
+                const savedDailyDrawn = localStorage.getItem('guild_daily_drawn');
                 
                 if (savedClasses && savedStudents && savedGroups) {
                     setClasses(JSON.parse(savedClasses));
@@ -2077,6 +2128,7 @@
                         parsed = parsed.map(r => ({...r, type: r.type || 'penalty', exp: r.exp || r.points || 0, gold: r.gold || 0}));
                         setRuleItems(parsed);
                     }
+                    if (savedDailyDrawn) setDailyDrawn(JSON.parse(savedDailyDrawn));
                 } else {
                     setClasses(INITIAL_CLASSES);
                     setStudents(INITIAL_STUDENTS);
@@ -2095,6 +2147,7 @@
                     localStorage.setItem('guild_squad_bosses', JSON.stringify(squadBosses));
                     localStorage.setItem('guild_guild_boss', JSON.stringify(guildBoss));
                     localStorage.setItem('guild_rule_items', JSON.stringify(ruleItems));
+                    localStorage.setItem('guild_daily_drawn', JSON.stringify(dailyDrawn));
                 }
 
                 if (!isCloudLoaded || !user || !window.db) return;
@@ -2105,7 +2158,7 @@
                     return;
                 }
                 
-                const payload = { classes, students, groups, logs, squadBosses, guildBoss, ruleItems };
+                const payload = { classes, students, groups, logs, squadBosses, guildBoss, ruleItems, dailyDrawn };
                 const cleanPayload = JSON.parse(JSON.stringify(payload));
                 
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'science-guild';
@@ -2120,11 +2173,34 @@
                     }
                 });
                 
-            }, [classes, students, groups, logs, squadBosses, guildBoss, ruleItems, isCloudLoaded, user]);
+            }, [classes, students, groups, logs, squadBosses, guildBoss, ruleItems, dailyDrawn, isCloudLoaded, user]);
 
             const addLog = (msg, targetClassId = currentClassId) => {
                 const time = new Date().toLocaleTimeString('zh-TW', { hour12: false });
-                setLogs(prev => [{time, msg, classId: targetClassId}, ...prev].slice(0, 100));
+                // ★ 保留紀錄上限由 100 大幅提高到 3000，避免多班級使用沒幾天記錄就被洗掉
+                setLogs(prev => [{time, msg, classId: targetClassId}, ...prev].slice(0, 3000));
+            };
+
+            // ★ 抽人「當日抽過不再抽，隔日重置」機制
+            const getTodayStr = () => {
+                const d = new Date();
+                return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+            };
+            const handleRecordDraw = (targetClassId, studentId) => {
+                setDailyDrawn(prev => {
+                    const today = getTodayStr();
+                    const existing = prev[targetClassId];
+                    const ids = (existing && existing.date === today) ? existing.ids : [];
+                    if (ids.includes(studentId)) return prev;
+                    return { ...prev, [targetClassId]: { date: today, ids: [...ids, studentId] } };
+                });
+            };
+            const handleResetDailyDrawn = (targetClassId) => {
+                setDailyDrawn(prev => {
+                    const next = { ...prev };
+                    delete next[targetClassId];
+                    return next;
+                });
             };
 
             const getExpReq = (level) => level * 100;
@@ -2405,6 +2481,7 @@
                 const ruleItem = ruleItems.find(p => p.id === ruleId);
                 if(!ruleItem) return;
                 const logsToAdd = [];
+                const affectedClassIds = new Set();
 
                 ids.forEach(studentId => {
                     let sIndex = updatedStudents.findIndex(s => s.id === parseInt(studentId));
@@ -2412,6 +2489,7 @@
 
                     let student = { ...updatedStudents[sIndex] };
                     let gIndex = updatedGroups.findIndex(g => g.id === student.groupId);
+                    affectedClassIds.add(student.classId);
 
                     if (ruleItem.type === 'penalty') {
                         const pts = ruleItem.exp || 0;
@@ -2458,6 +2536,13 @@
                     }
                 });
 
+                // ★ 加錯撤銷：套用前先保留完整快照，僅保留最近一次操作
+                setLastAction({
+                    students, groups,
+                    classId: [...affectedClassIds][0] ?? currentClassId,
+                    description: `${ruleItem.type === 'penalty' ? '紀律裁決' : '頒發獎勵'}：${ids.length} 人 ×【${ruleItem.name}】`
+                });
+
                 playAudio(ruleItem.type === 'penalty' ? 'penalty' : 'win');
                 setStudents(updatedStudents);
                 setGroups(updatedGroups);
@@ -2471,12 +2556,14 @@
                 const ruleItem = ruleItems.find(p => p.id === ruleId);
                 if(!ruleItem) return;
                 const logsToAdd = [];
+                const affectedClassIds = new Set();
 
                 ids.forEach(groupId => {
                     let gIndex = updatedGroups.findIndex(g => g.id === parseInt(groupId));
                     if(gIndex === -1) return;
                     const group = { ...updatedGroups[gIndex] };
                     const pts = ruleItem.exp || 0;
+                    affectedClassIds.add(group.classId);
 
                     if (ruleItem.type === 'penalty') {
                         group.score = Math.max(0, (group.score || 0) - pts);
@@ -2488,6 +2575,13 @@
                     updatedGroups[gIndex] = group;
                 });
 
+                // ★ 加錯撤銷：套用前先保留完整快照，僅保留最近一次操作
+                setLastAction({
+                    students, groups,
+                    classId: [...affectedClassIds][0] ?? currentClassId,
+                    description: `小隊${ruleItem.type === 'penalty' ? '裁決' : '獎勵'}：${ids.length} 隊 ×【${ruleItem.name}】`
+                });
+
                 playAudio(ruleItem.type === 'penalty' ? 'penalty' : 'win');
                 setGroups(updatedGroups);
                 logsToAdd.forEach(l => addLog(l.msg, l.classId));
@@ -2496,6 +2590,15 @@
             const handleAddRuleItem = (type, name, exp, gold) => {
                 const newItem = { id: Date.now(), type, name, exp: parseInt(exp)||0, gold: parseInt(gold)||0 };
                 setRuleItems([...ruleItems, newItem]);
+            };
+
+            // ★ 加錯撤銷：還原到最近一次獎懲操作之前的狀態
+            const handleUndoLastAction = () => {
+                if (!lastAction) return;
+                setStudents(lastAction.students);
+                setGroups(lastAction.groups);
+                addLog(`↩️ 已撤銷上一步操作：${lastAction.description}`, lastAction.classId);
+                setLastAction(null);
             };
 
             const handleDeleteRuleItem = (id) => {
@@ -2946,8 +3049,8 @@
                     <main className="flex-1 p-4 md:p-8 overflow-y-auto">
                         {view === 'admin' && <AdminPanel students={students} classes={classes} groups={groups} onApprove={handleApproveCustomAvatar} onReject={handleRejectCustomAvatar} onArchiveClass={handleArchiveClass} onDeleteClass={handleDeleteClass} onAddGroup={handleAddGroup} onDeleteGroup={handleDeleteGroup} onDeleteStudent={handleDeleteStudent} onMoveStudent={handleMoveStudent} />}
                         {view === 'dashboard' && <Dashboard classId={currentClassId} groups={groups} students={students} logs={logs} />}
-                        {view === 'roster' && <Roster classId={currentClassId} branchName={currentClassId === 'admin' ? '全公會管理中心' : getClassObj(currentClassId)?.name} groups={groups} students={students} getGroup={getGroup} onOpenShop={setShopBuyerId} onOpenAvatarEditor={setEditingAvatarId} onAddGroup={handleAddGroup} onAddStudent={handleAddStudent} ruleItems={ruleItems} onAddRuleItem={handleAddRuleItem} onDeleteRuleItem={handleDeleteRuleItem} onApplyRule={handleApplyRule} onApplyTeamRule={handleApplyTeamRule} />}
-                        {view === 'quest' && <QuestBoard classId={currentClassId} students={students} groups={groups} squadBosses={squadBosses} guildBoss={guildBoss} onResult={handleQuestResult} onSpawnBoss={handleSpawnBoss} onBossAttack={handleBossAttack} />}
+                        {view === 'roster' && <Roster classId={currentClassId} branchName={currentClassId === 'admin' ? '全公會管理中心' : getClassObj(currentClassId)?.name} groups={groups} students={students} getGroup={getGroup} onOpenShop={setShopBuyerId} onOpenAvatarEditor={setEditingAvatarId} onAddGroup={handleAddGroup} onAddStudent={handleAddStudent} ruleItems={ruleItems} onAddRuleItem={handleAddRuleItem} onDeleteRuleItem={handleDeleteRuleItem} onApplyRule={handleApplyRule} onApplyTeamRule={handleApplyTeamRule} lastAction={lastAction} onUndoLastAction={handleUndoLastAction} />}
+                        {view === 'quest' && <QuestBoard classId={currentClassId} students={students} groups={groups} squadBosses={squadBosses} guildBoss={guildBoss} onResult={handleQuestResult} onSpawnBoss={handleSpawnBoss} onBossAttack={handleBossAttack} dailyDrawn={dailyDrawn} onRecordDraw={handleRecordDraw} onResetDailyDrawn={handleResetDailyDrawn} />}
                     </main>
 
                     {/* Modal Layer */}
