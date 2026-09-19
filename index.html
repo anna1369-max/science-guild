@@ -234,10 +234,10 @@
         };
 
         const MONSTERS = [
-            { id: 'm1', name: '史萊姆', diff: '容易', exp: 20, gold: 10, dmg: 2, icon: 'fa-disease', color: 'text-green-400', weight: 40 },
+            { id: 'm1', name: '史萊姆', diff: '容易', exp: 20, gold: 10, dmg: 2, icon: 'fa-disease', color: 'text-green-400', weight: 45 },
             { id: 'm2', name: '哥布林', diff: '中等', exp: 50, gold: 25, dmg: 5, icon: 'fa-skull', color: 'text-yellow-500', weight: 30 },
             { id: 'm3', name: '地獄犬', diff: '困難', exp: 120, gold: 50, dmg: 10, icon: 'fa-dog', color: 'text-red-500', weight: 20 },
-            { id: 'm4', name: '遠古巨龍', diff: '魔王', exp: 300, gold: 150, dmg: 999, icon: 'fa-dragon', color: 'text-purple-500', weight: 10 }
+            { id: 'm4', name: '遠古巨龍', diff: '魔王', exp: 300, gold: 150, dmg: 999, icon: 'fa-dragon', color: 'text-purple-500', weight: 5 }
         ];
 
         // ★ 加權隨機抽取：依照每個項目的 weight 比例決定被抽到的機率（weight 加總不需要剛好等於 100，函式會自動依比例換算）
@@ -1288,7 +1288,9 @@
             )
         };
 
-        const QuestBoard = ({ classId, students, groups, squadBosses, guildBoss, onResult, onSpawnBoss, onBossAttack, dailyDrawn, onRecordDraw, onResetDailyDrawn }) => {
+        const QuestBoard = ({ classId, students, groups, squadBosses, guildBoss, onResult, onSpawnBoss, onBossAttack, dailyDrawn, onRecordDraw, onResetDailyDrawn, liveDraw, onBroadcastDraw }) => {
+            const myDeviceId = useRef(Math.random().toString(36).slice(2)).current; // ★ 用來分辨「這台裝置自己抽的」跟「別台裝置同步過來的」
+            const lastSeenDrawTs = useRef(0);
             const [tab, setTab] = useState('normal'); 
             const [aiTopic, setAiTopic] = useState('');
             const [isGenerating, setIsGenerating] = useState(false);
@@ -1331,6 +1333,30 @@
             };
 
             const activeBoss = tab === 'squad' ? squadBosses[selectedGroupId] : tab === 'guild' ? guildBoss : drawnMonster;
+
+            // ★ 跨裝置同步抽人：偵測到「別台裝置」剛剛抽出的結果，就在這台裝置也重播一次抽人動畫、停在同一位冒險者身上
+            useEffect(() => {
+                const rec = liveDraw && liveDraw[classId];
+                if (!rec || rec.ts <= lastSeenDrawTs.current) return;
+                lastSeenDrawTs.current = rec.ts;
+                if (rec.deviceId === myDeviceId) return; // 自己這台裝置抽的，已經播過動畫了，不用重播
+                if (rec.tab !== tab) return; // 目前沒開在同一個分頁，安靜略過（不強迫跳頁）
+                if (rec.tab === 'squad' && String(rec.groupId || '') !== String(selectedGroupId || '')) return; // 小隊迷宮戰要同一支小隊才重播
+
+                const targetStudent = students.find(s => s.id === rec.studentId);
+                if (!targetStudent) return;
+
+                const pool = (rec.tab === 'squad' ? availableStudents : activeStudents);
+                setIsSpinningStudent(true);
+                let newSReel = [];
+                for (let i = 0; i < TOTAL_ITEMS - 1; i++) newSReel.push(pool.length ? pool[Math.floor(Math.random() * pool.length)] : targetStudent);
+                newSReel.push(targetStudent);
+                setReelStudents(newSReel);
+                setTimeout(() => {
+                    setIsSpinningStudent(false);
+                    setSelectedStudent(targetStudent.id.toString());
+                }, SPIN_DURATION);
+            }, [liveDraw, classId]);
 
             const addFloatingText = (text, type, target) => {
                 const id = Date.now() + Math.random();
@@ -1420,6 +1446,7 @@
                     const picked = newSReel[TOTAL_ITEMS-1];
                     setSelectedStudent(picked.id.toString());
                     onRecordDraw(classId, picked.id);
+                    onBroadcastDraw(classId, tab, selectedGroupId, picked.id, myDeviceId);
                 }, SPIN_DURATION);
             };
 
@@ -1439,6 +1466,7 @@
                     const picked = newSReel[TOTAL_ITEMS - 1];
                     setSelectedStudent(picked.id.toString());
                     onRecordDraw(classId, picked.id);
+                    onBroadcastDraw(classId, tab, selectedGroupId, picked.id, myDeviceId);
                 }, SPIN_DURATION);
                 setTimeout(() => { setIsSpinningMonster(false); setDrawnMonster(newMReel[TOTAL_ITEMS - 1]); }, 3000);
             };
@@ -1956,6 +1984,7 @@
             const [guildBoss, setGuildBoss] = useState(null);
             const [ruleItems, setRuleItems] = useState([]);
             const [dailyDrawn, setDailyDrawn] = useState({}); // ★ 抽人「當日抽過不再抽」紀錄：{ [classId]: { date, ids: [] } }
+            const [liveDraw, setLiveDraw] = useState({}); // ★ 跨裝置同步抽人：{ [classId]: { tab, groupId, studentId, ts, deviceId } }
             const [lastAction, setLastAction] = useState(null); // ★ 加錯撤銷：{ students, groups, description, classId } 只保留最近一次
             
             // 雲端連線狀態與阻斷機制
@@ -2080,6 +2109,7 @@
                         setSquadBosses(data.squadBosses || {});
                         setGuildBoss(data.guildBoss || null);
                         setDailyDrawn(data.dailyDrawn || {});
+                        setLiveDraw(data.liveDraw || {});
                         
                         // 相容舊版扣分資料轉換為新版獎懲系統
                         let loadedRules = data.ruleItems || data.penaltyItems;
@@ -2158,7 +2188,7 @@
                     return;
                 }
                 
-                const payload = { classes, students, groups, logs, squadBosses, guildBoss, ruleItems, dailyDrawn };
+                const payload = { classes, students, groups, logs, squadBosses, guildBoss, ruleItems, dailyDrawn, liveDraw };
                 const cleanPayload = JSON.parse(JSON.stringify(payload));
                 
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'science-guild';
@@ -2173,7 +2203,7 @@
                     }
                 });
                 
-            }, [classes, students, groups, logs, squadBosses, guildBoss, ruleItems, dailyDrawn, isCloudLoaded, user]);
+            }, [classes, students, groups, logs, squadBosses, guildBoss, ruleItems, dailyDrawn, liveDraw, isCloudLoaded, user]);
 
             const addLog = (msg, targetClassId = currentClassId) => {
                 const time = new Date().toLocaleTimeString('zh-TW', { hour12: false });
@@ -2201,6 +2231,11 @@
                     delete next[targetClassId];
                     return next;
                 });
+            };
+
+            // ★ 跨裝置同步抽人：平板抽完人，其他正在看同一個班級「任務看板」的裝置（例如電腦投影畫面）也會自動重播一次抽人動畫並顯示同一個結果
+            const handleBroadcastDraw = (targetClassId, tab, groupId, studentId, deviceId) => {
+                setLiveDraw(prev => ({ ...prev, [targetClassId]: { tab, groupId: groupId || null, studentId, ts: Date.now(), deviceId } }));
             };
 
             const getExpReq = (level) => level * 100;
@@ -3050,7 +3085,7 @@
                         {view === 'admin' && <AdminPanel students={students} classes={classes} groups={groups} onApprove={handleApproveCustomAvatar} onReject={handleRejectCustomAvatar} onArchiveClass={handleArchiveClass} onDeleteClass={handleDeleteClass} onAddGroup={handleAddGroup} onDeleteGroup={handleDeleteGroup} onDeleteStudent={handleDeleteStudent} onMoveStudent={handleMoveStudent} />}
                         {view === 'dashboard' && <Dashboard classId={currentClassId} groups={groups} students={students} logs={logs} />}
                         {view === 'roster' && <Roster classId={currentClassId} branchName={currentClassId === 'admin' ? '全公會管理中心' : getClassObj(currentClassId)?.name} groups={groups} students={students} getGroup={getGroup} onOpenShop={setShopBuyerId} onOpenAvatarEditor={setEditingAvatarId} onAddGroup={handleAddGroup} onAddStudent={handleAddStudent} ruleItems={ruleItems} onAddRuleItem={handleAddRuleItem} onDeleteRuleItem={handleDeleteRuleItem} onApplyRule={handleApplyRule} onApplyTeamRule={handleApplyTeamRule} lastAction={lastAction} onUndoLastAction={handleUndoLastAction} />}
-                        {view === 'quest' && <QuestBoard classId={currentClassId} students={students} groups={groups} squadBosses={squadBosses} guildBoss={guildBoss} onResult={handleQuestResult} onSpawnBoss={handleSpawnBoss} onBossAttack={handleBossAttack} dailyDrawn={dailyDrawn} onRecordDraw={handleRecordDraw} onResetDailyDrawn={handleResetDailyDrawn} />}
+                        {view === 'quest' && <QuestBoard classId={currentClassId} students={students} groups={groups} squadBosses={squadBosses} guildBoss={guildBoss} onResult={handleQuestResult} onSpawnBoss={handleSpawnBoss} onBossAttack={handleBossAttack} dailyDrawn={dailyDrawn} onRecordDraw={handleRecordDraw} onResetDailyDrawn={handleResetDailyDrawn} liveDraw={liveDraw} onBroadcastDraw={handleBroadcastDraw} />}
                     </main>
 
                     {/* Modal Layer */}
