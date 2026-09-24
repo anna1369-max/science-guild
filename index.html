@@ -1338,6 +1338,7 @@
         const QuestBoard = ({ classId, students, groups, squadBosses, guildBoss, onResult, onSpawnBoss, onBossAttack, dailyDrawn, onRecordDraw, onResetDailyDrawn, liveDraw, onBroadcastDraw }) => {
             const myDeviceId = useRef(Math.random().toString(36).slice(2)).current; // ★ 用來分辨「這台裝置自己抽的」跟「別台裝置同步過來的」
             const lastSeenDrawTs = useRef(0);
+            const hasInitializedDrawSync = useRef(false); // ★ 避免一進頁面就把資料庫裡「舊的」抽選紀錄誤當成「剛剛發生」而自動重播
             const [tab, setTab] = useState('normal'); 
             const [aiTopic, setAiTopic] = useState('');
             const [isGenerating, setIsGenerating] = useState(false);
@@ -1384,7 +1385,18 @@
             // ★ 跨裝置同步抽人：偵測到「別台裝置」剛剛抽出的結果，就在這台裝置也重播一次抽人動畫、停在同一位冒險者身上
             useEffect(() => {
                 const rec = liveDraw && liveDraw[classId];
-                if (!rec || rec.ts <= lastSeenDrawTs.current) return;
+                if (!rec) return;
+
+                // ★ 修正：剛打開任務看板時，liveDraw 裡可能還留著「之前」的抽選紀錄(不管是自己上次抽的還是別人抽的)。
+                //   這種「第一次看到」的紀錄只能默默記下來、絕對不能重播，否則就會變成一進頁面就自動幫你抽了一個人。
+                //   只有在「這台裝置已經穩定顯示過畫面之後，liveDraw 又再更新一次」時，才代表是真的有人剛剛抽選，才需要重播。
+                if (!hasInitializedDrawSync.current) {
+                    hasInitializedDrawSync.current = true;
+                    lastSeenDrawTs.current = rec.ts;
+                    return;
+                }
+
+                if (rec.ts <= lastSeenDrawTs.current) return;
                 lastSeenDrawTs.current = rec.ts;
                 if (rec.deviceId === myDeviceId) return; // 自己這台裝置抽的，已經播過動畫了，不用重播
                 if (rec.tab !== tab) return; // 目前沒開在同一個分頁，安靜略過（不強迫跳頁）
