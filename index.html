@@ -2127,8 +2127,19 @@
                     }
                 };
                 initFirebase();
-                
-                // 註冊重置密碼事件監聽器
+
+                return () => { 
+                    if (unsubscribe) unsubscribe(); 
+                };
+            }, []); // ★ 修正重大 bug：Firebase 初始化只應該在載入時執行「一次」。
+                     //   原本寫成 [students]，導致每次任何學生資料變動（幾乎每次加分、升級、扣血都算）
+                     //   就會整個重新初始化 Firebase 一次，重複呼叫 initializeApp() 會直接噴出
+                     //   「Firebase App 已存在」的錯誤，讓雲端連線變得不穩定——這正是抽籤同步
+                     //   等跨裝置功能「時好時壞、常常同步不到」的根本原因。
+
+            // ★ 重置密碼事件監聽器獨立成自己的 effect，確保裡面用到的 students 永遠是最新的，
+            //   同時又不會拖累上面 Firebase 初始化的 effect
+            useEffect(() => {
                 const handleResetEvent = (e) => {
                     let updated = [...students];
                     let sIndex = updated.findIndex(s => s.id === parseInt(e.detail));
@@ -2140,11 +2151,7 @@
                     }
                 };
                 window.addEventListener('reset-pin', handleResetEvent);
-
-                return () => { 
-                    if (unsubscribe) unsubscribe(); 
-                    window.removeEventListener('reset-pin', handleResetEvent);
-                };
+                return () => { window.removeEventListener('reset-pin', handleResetEvent); };
             }, [students]);
 
             // 讀取遠端資料
