@@ -2820,7 +2820,7 @@
 
                     student.gold -= item.cost;
                     if (item.type === 'consumable') {
-                        const synergy = getGroupSynergy(student.groupId, updatedStudents);
+                        const synergy = getGroupSynergy(student.groupId, updated);
                         const effectiveMaxHp = student.maxHp + synergy.hpBonus;
                         student = item.effect(student, effectiveMaxHp);
                         addLog(`🧪 ${student.name} 使用了 ${item.name}。`, student.classId);
