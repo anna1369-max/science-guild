@@ -1335,7 +1335,7 @@
             )
         };
 
-        const QuestBoard = ({ classId, students, groups, squadBosses, guildBoss, onResult, onSpawnBoss, onBossAttack, dailyDrawn, onRecordDraw, onResetDailyDrawn, liveDraw, onBroadcastDraw }) => {
+        const QuestBoard = ({ classId, students, groups, squadBosses, guildBoss, onResult, onSpawnBoss, onBossAttack, dailyDrawn, onRecordDraw, onResetDailyDrawn, liveDraw, onBroadcastDraw, onSparringResult }) => {
             const myDeviceId = useRef(Math.random().toString(36).slice(2)).current; // ★ 用來分辨「這台裝置自己抽的」跟「別台裝置同步過來的」
             const lastSeenDrawTs = useRef(0);
             const hasInitializedDrawSync = useRef(false); // ★ 避免一進頁面就把資料庫裡「舊的」抽選紀錄誤當成「剛剛發生」而自動重播
@@ -1354,6 +1354,11 @@
             const [isSpinningMonster, setIsSpinningMonster] = useState(false);
             const [reelMonsters, setReelMonsters] = useState([]);
             const [drawnMonster, setDrawnMonster] = useState(null);
+
+            // ★ 成員團練：對手是「另一位同學」而不是怪物
+            const [isSpinningOpponent, setIsSpinningOpponent] = useState(false);
+            const [reelOpponents, setReelOpponents] = useState([]);
+            const [drawnOpponent, setDrawnOpponent] = useState(null);
             
             const [combatAnim, setCombatAnim] = useState({ student: '', monster: '' });
             const [vfx, setVfx] = useState({ student: null, monster: null, studentLevel: 1 });
@@ -1425,6 +1430,7 @@
 
             const resetBoard = () => {
                 setDrawnMonster(null); setSelectedStudent(''); setReelMonsters([]); setReelStudents([]); setCombatAnim({ student: '', monster: '' }); setVfx({ student: null, monster: null, studentLevel: 1 }); setIsFighting(false); setAiData(null); setAiSelectedOpt(null); setAiResultText(null);
+                setDrawnOpponent(null); setReelOpponents([]); setIsSpinningOpponent(false);
             };
 
             const spawnBoss = () => {
@@ -1528,6 +1534,74 @@
                     onBroadcastDraw(classId, tab, selectedGroupId, picked.id, myDeviceId);
                 }, SPIN_DURATION);
                 setTimeout(() => { setIsSpinningMonster(false); setDrawnMonster(newMReel[TOTAL_ITEMS - 1]); }, 3000);
+            };
+
+            // ★ 成員團練：一次抽出「出戰者」與「對手」兩位不同的同學，兩人都計入今日已抽名單
+            const handleSparringDraw = () => {
+                if (activeStudents.length < 2) return alert('這個分會至少需要 2 位存活的冒險者，才能進行成員團練！');
+                const pool = getEligiblePool(activeStudents);
+                setIsSpinningStudent(true); setIsSpinningOpponent(true); setDrawnOpponent(null);
+                setCombatAnim({ student: '', monster: '' }); setVfx({ student: null, monster: null, studentLevel: 1 });
+
+                const currentSelectedObj = activeStudents.find(s => s.id === parseInt(selectedStudent)) || pool[0];
+                const finalPlayer = pool[Math.floor(Math.random() * pool.length)];
+                let newSReel = [];
+                for (let i = 0; i < TOTAL_ITEMS; i++) {
+                    if (i === 0) newSReel.push(currentSelectedObj);
+                    else if (i === TOTAL_ITEMS - 1) newSReel.push(finalPlayer);
+                    else newSReel.push(pool[Math.floor(Math.random() * pool.length)]);
+                }
+                setReelStudents(newSReel);
+
+                // 對手池排除剛剛抽到的出戰者本人，避免自己跟自己團練
+                const opponentPool = getEligiblePool(activeStudents.filter(s => s.id !== finalPlayer.id));
+                const finalOpponent = opponentPool[Math.floor(Math.random() * opponentPool.length)];
+                let newOReel = [];
+                for (let i = 0; i < TOTAL_ITEMS; i++) newOReel.push(opponentPool[Math.floor(Math.random() * opponentPool.length)]);
+                newOReel[TOTAL_ITEMS - 1] = finalOpponent;
+                setReelOpponents(newOReel);
+
+                setTimeout(() => {
+                    setIsSpinningStudent(false);
+                    setSelectedStudent(finalPlayer.id.toString());
+                    onRecordDraw(classId, finalPlayer.id);
+                }, SPIN_DURATION);
+                setTimeout(() => {
+                    setIsSpinningOpponent(false);
+                    setDrawnOpponent(finalOpponent);
+                    onRecordDraw(classId, finalOpponent.id);
+                }, 3000);
+            };
+
+            // ★ 成員團練的結算：答對有 50 EXP / 25 G，答錯也鼓勵性地給 20 EXP（不扣血），鼓勵學生盡量爭取作答機會
+            const executeSparring = (isCorrect) => {
+                if (!selectedStudent || !drawnOpponent || isFighting) return;
+                setIsFighting(true);
+                const student = activeStudents.find(s => s.id === parseInt(selectedStudent));
+                const expGain = isCorrect ? 50 : 20;
+                const goldGain = isCorrect ? 25 : 0;
+
+                setCombatAnim({ student: 'anim-attack-right', monster: '' });
+                setTimeout(() => {
+                    playAudio('attack');
+                    setVfx({ student: null, monster: isCorrect ? 'novice' : null, studentLevel: student.level });
+                    setCombatAnim({ student: '', monster: isCorrect ? 'anim-shake-red' : '' });
+                    addFloatingText(isCorrect ? '🤝 漂亮的回答！' : '💪 再接再厲！', isCorrect ? 'heal' : 'damage', 'student');
+
+                    setTimeout(() => {
+                        setVfx({ student: null, monster: null, studentLevel: 1 });
+                        setCombatAnim({ student: '', monster: 'anim-fade-out' });
+                        playAudio('win');
+                        addFloatingText(`+${expGain} EXP`, 'exp', 'student');
+                        if (goldGain > 0) setTimeout(() => { playAudio('coin'); addFloatingText(`+${goldGain} G`, 'gold', 'student'); }, 300);
+
+                        setTimeout(() => {
+                            onSparringResult(student.id, drawnOpponent.id, isCorrect);
+                            resetBoard();
+                            setIsFighting(false);
+                        }, 1000);
+                    }, 700);
+                }, 300);
             };
 
             const startSpin = () => {
@@ -1678,12 +1752,14 @@
                         <h2 className="text-3xl font-bold text-guild-gold">任務看板</h2>
                         <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-2">
                             <button onClick={() => { setTab('normal'); resetBoard(); }} className={`px-4 py-2 rounded-t font-bold transition whitespace-nowrap ${tab === 'normal' ? 'bg-guild-gold text-guild-dark' : 'bg-guild-dark text-gray-400 hover:text-white border border-gray-600 border-b-0'}`}><i className="fa-solid fa-slot-machine mr-2"></i>一般遭遇</button>
+                            <button onClick={() => { setTab('sparring'); resetBoard(); setDrawnOpponent(null); }} className={`px-4 py-2 rounded-t font-bold transition whitespace-nowrap ${tab === 'sparring' ? 'bg-green-600 text-white' : 'bg-guild-dark text-gray-400 hover:text-white border border-gray-600 border-b-0'}`}><i className="fa-solid fa-people-arrows mr-2"></i>成員團練</button>
                             <button onClick={() => { setTab('ai'); resetBoard(); }} className={`px-4 py-2 rounded-t font-bold transition whitespace-nowrap ${tab === 'ai' ? 'bg-purple-600 text-white' : 'bg-guild-dark text-gray-400 hover:text-white border border-gray-600 border-b-0'}`}><i className="fa-solid fa-scroll mr-2"></i>AI 魔法卷軸</button>
                             <button onClick={() => { setTab('squad'); resetBoard(); }} className={`px-4 py-2 rounded-t font-bold transition whitespace-nowrap ${tab === 'squad' ? 'bg-blue-600 text-white' : 'bg-guild-dark text-gray-400 hover:text-white border border-gray-600 border-b-0'}`}><i className="fa-solid fa-dungeon mr-2"></i>小隊迷宮戰</button>
                             <button onClick={() => { setTab('guild'); resetBoard(); }} className={`px-4 py-2 rounded-t font-bold transition whitespace-nowrap ${tab === 'guild' ? 'bg-red-700 text-white' : 'bg-guild-dark text-gray-400 hover:text-white border border-gray-600 border-b-0'}`}><i className="fa-solid fa-globe mr-2"></i>全公會討伐</button>
                         </div>
                     </div>
                     
+                    {tab !== 'sparring' && (
                     <div className={`panel p-6 md:p-10 text-center relative overflow-hidden bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] ${tab === 'ai' ? 'from-purple-900/40 via-guild-dark to-black' : tab === 'squad' ? 'from-blue-900/30 via-guild-dark to-black' : tab === 'guild' ? 'from-red-900/30 via-guild-dark to-black' : 'from-guild-panel via-guild-dark to-black'}`}>
                         
                         {tab === 'squad' && (
@@ -1906,6 +1982,129 @@
                             )}
                         </div>
                     </div>
+                    )}
+
+                    {tab === 'sparring' && (
+                    <div className="panel p-6 md:p-10 text-center relative overflow-hidden bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-900/30 via-guild-dark to-black">
+                        <div className="mb-8 max-w-lg mx-auto text-left relative z-10 bg-black/40 p-4 rounded-xl border border-green-500/30">
+                            <label className="block text-guild-paper mb-2 font-bold text-center"><i className="fa-solid fa-hand-pointer mr-2"></i>指派出戰的冒險者</label>
+                            <div className="flex gap-2">
+                                <select className="flex-1 p-4 bg-guild-dark border-2 border-green-500 rounded-lg text-green-300 font-bold text-lg focus:outline-none shadow-[0_0_15px_rgba(34,197,94,0.3)]" value={selectedStudent} onChange={(e) => setSelectedStudent(e.target.value)} disabled={isSpinningStudent || isSpinningOpponent || isFighting}>
+                                    <option value="">-- 手動點名 --</option>
+                                    {activeStudents.map(s => <option key={s.id} value={s.id}>{s.name} (Lv.{s.level} {s.job}) - HP: {s.hp}</option>)}
+                                </select>
+                                <button onClick={handleSparringDraw} disabled={isSpinningStudent || isSpinningOpponent || isFighting || activeStudents.length < 2} className="px-6 bg-green-800 hover:bg-green-700 disabled:bg-gray-700 text-white font-bold rounded-lg border border-green-500 transition shadow-[0_0_15px_rgba(22,163,74,0.5)] flex items-center justify-center whitespace-nowrap"><i className={`fa-solid fa-people-arrows ${isSpinningStudent || isSpinningOpponent ? 'fa-spin' : ''} mr-2 text-2xl`}></i> 隨機配對團練</button>
+                            </div>
+
+                            {activeStudents.length > 0 && (
+                                <div className="mt-3 flex items-center justify-between text-xs text-gray-400 flex-wrap gap-2">
+                                    <span><i className="fa-solid fa-list-check mr-1"></i>今日已抽選：{activeStudents.filter(s => drawnTodayIds.includes(s.id)).length} / {activeStudents.length} 位（抽過的人隔天會自動重置，也可以手動重設）</span>
+                                    {drawnTodayIds.length > 0 && (
+                                        <button onClick={() => onResetDailyDrawn(classId)} className="text-blue-400 hover:text-blue-300 underline shrink-0">重設今日名單</button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex flex-col md:flex-row justify-center items-start gap-12 mb-8 mt-4">
+                            <div className={`relative flex flex-col items-center w-56 ${combatAnim.student}`}>
+                                <VFXOverlay type={vfx.student} level={vfx.studentLevel} />
+                                {floatingTexts.filter(ft => ft.target === 'student').map(ft => (
+                                    <div key={ft.id} className={`absolute -top-10 font-bold text-3xl z-[60] anim-float-up pointer-events-none drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] ${ft.type === 'damage' ? 'text-red-500' : ft.type === 'exp' ? 'text-blue-400' : ft.type === 'gold' ? 'text-yellow-400' : 'text-green-400'}`}>{ft.text}</div>
+                                ))}
+
+                                <div className={`w-40 h-40 rounded-lg border-4 ${isSpinningStudent || selectedStudent ? 'border-green-400 shadow-[0_0_20px_rgba(74,222,128,0.5)]' : 'border-gray-700'} bg-black overflow-hidden relative z-10`}>
+                                    {(!isSpinningStudent && !selectedStudent) ? (
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center opacity-80 shadow-inner"><i className="fa-solid fa-user text-6xl text-gray-600 animate-pulse"></i></div>
+                                    ) : (
+                                        <>
+                                            <div className="absolute inset-0 pointer-events-none z-10 shadow-[inset_0_20px_20px_rgba(0,0,0,0.8),inset_0_-20px_20px_rgba(0,0,0,0.8)]"></div>
+                                            <div className={`flex flex-col w-full ${isSpinningStudent ? 'spin-reel-student' : ''}`}>
+                                                {isSpinningStudent ? (
+                                                    reelStudents.map((s, i) => (
+                                                        <div key={i} className="w-full h-40 flex items-center justify-center shrink-0"><AvatarDisplay student={s} size="w-32 h-32" /></div>
+                                                    ))
+                                                ) : (
+                                                    <div className="w-full h-40 flex items-center justify-center shrink-0"><AvatarDisplay student={activeStudents.find(s => s.id === parseInt(selectedStudent))} size="w-32 h-32" /></div>
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+
+                                <div className="h-12 mt-5 flex items-center justify-center w-full relative z-20">
+                                    {isSpinningStudent ? (
+                                        <div className="text-gray-400 font-bold animate-pulse tracking-widest text-sm">搜尋冒險者...</div>
+                                    ) : selectedStudent ? (
+                                        <div className="font-bold text-xl text-guild-paper bg-guild-dark px-6 py-2 rounded-full border-2 border-green-400 shadow-[0_0_15px_rgba(74,222,128,0.4)] whitespace-nowrap">
+                                            {activeStudents.find(s => s.id === parseInt(selectedStudent))?.name}
+                                            <span className="text-sm text-gray-400 ml-2">Lv.{activeStudents.find(s => s.id === parseInt(selectedStudent))?.level}</span>
+                                        </div>
+                                    ) : <div className="text-gray-600 font-bold text-sm">等待指派</div>}
+                                </div>
+                            </div>
+
+                            <div className="text-5xl text-guild-gold font-bold italic drop-shadow-[0_0_10px_rgba(250,204,21,0.8)] z-10 mx-2 self-center pt-16">VS</div>
+
+                            <div className={`relative flex flex-col items-center w-56 ${combatAnim.monster}`}>
+                                <VFXOverlay type={vfx.monster} level={vfx.studentLevel} />
+                                {floatingTexts.filter(ft => ft.target === 'monster').map(ft => (
+                                    <div key={ft.id} className="absolute -top-10 text-center font-black text-2xl text-green-400 z-[60] anim-float-up pointer-events-none drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">{ft.text}</div>
+                                ))}
+
+                                <div className={`w-40 h-40 rounded-lg border-4 ${isSpinningOpponent || drawnOpponent ? 'border-orange-400 shadow-[0_0_20px_rgba(251,146,60,0.5)]' : 'border-gray-700'} bg-black overflow-hidden relative z-10`}>
+                                    {(!isSpinningOpponent && !drawnOpponent) ? (
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center opacity-80 shadow-inner"><i className="fa-solid fa-people-arrows text-6xl text-gray-600 animate-pulse"></i></div>
+                                    ) : (
+                                        <>
+                                            <div className="absolute inset-0 pointer-events-none z-10 shadow-[inset_0_20px_20px_rgba(0,0,0,0.8),inset_0_-20px_20px_rgba(0,0,0,0.8)]"></div>
+                                            <div className={`flex flex-col w-full ${isSpinningOpponent ? 'spin-reel-monster' : ''}`}>
+                                                {isSpinningOpponent ? (
+                                                    reelOpponents.map((s, i) => (
+                                                        <div key={i} className="w-full h-40 flex items-center justify-center shrink-0"><AvatarDisplay student={s} size="w-32 h-32" /></div>
+                                                    ))
+                                                ) : (
+                                                    <div className="w-full h-40 flex items-center justify-center shrink-0"><AvatarDisplay student={drawnOpponent} size="w-32 h-32" /></div>
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+
+                                <div className="h-12 mt-5 flex items-center justify-center w-full relative z-20">
+                                    {isSpinningOpponent ? (
+                                        <div className="text-gray-400 font-bold animate-pulse tracking-widest text-sm">尋找對手...</div>
+                                    ) : drawnOpponent ? (
+                                        <div className="font-bold text-xl text-guild-paper bg-guild-dark px-6 py-2 rounded-full border-2 border-orange-400 shadow-[0_0_15px_rgba(251,146,60,0.4)] whitespace-nowrap">
+                                            {drawnOpponent.name}
+                                            <span className="text-sm text-gray-400 ml-2">Lv.{drawnOpponent.level}</span>
+                                        </div>
+                                    ) : <div className="text-gray-600 font-bold text-sm">等待配對</div>}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="min-h-32 mt-6">
+                            {(isSpinningStudent || isSpinningOpponent) && (
+                                <div className="text-2xl font-bold animate-pulse mt-4 text-green-400">
+                                    <i className="fa-solid fa-spinner fa-spin mr-2"></i> 配對冒險者中...
+                                </div>
+                            )}
+
+                            {drawnOpponent && !isFighting && !isSpinningOpponent && !isSpinningStudent && (
+                                <div className="animate-fade-in">
+                                    <div className="text-base text-gray-300 mb-6 bg-guild-dark inline-block px-6 py-3 rounded-full border border-green-500 shadow-lg">
+                                        出戰者答對：<span className="text-green-400 font-bold">+50 EXP / +25 G</span> &nbsp;|&nbsp; 答錯也有：<span className="text-blue-400 font-bold">+20 EXP</span>（不扣血）&nbsp;|&nbsp; 陪練對手固定：<span className="text-orange-400 font-bold">+20 EXP</span>
+                                    </div>
+                                    <div className="flex justify-center gap-6">
+                                        <button onClick={() => executeSparring(true)} disabled={!selectedStudent} className="px-8 py-4 bg-green-800 hover:bg-green-700 disabled:bg-gray-800 text-white font-bold rounded-lg shadow-lg border border-green-600 disabled:border-gray-600 transition text-xl flex-1 max-w-[220px]"><i className="fa-solid fa-check mr-2"></i> 答對</button>
+                                        <button onClick={() => executeSparring(false)} disabled={!selectedStudent} className="px-8 py-4 bg-blue-900 hover:bg-blue-800 disabled:bg-gray-800 text-white font-bold rounded-lg shadow-lg border border-blue-700 disabled:border-gray-600 transition text-xl flex-1 max-w-[220px]"><i className="fa-solid fa-xmark mr-2"></i> 答錯</button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    )}
                 </div>
             );
         };
@@ -2609,6 +2808,64 @@
                 setGroups(updatedGroups);
             };
 
+            // ★ 更新：成員團練結算。出戰者答對 +50 EXP/+25 G，答錯也給 +20 EXP（不扣血）；
+            //   陪練的對手固定獲得 +20 EXP 參與獎勵，這樣不用特地重設抽籤名單，陪練也一樣有得分機會。
+            //   兩人的加分在同一次處理完，避免像之前「多人加扣分」那樣因為分開存檔互相覆蓋掉彼此的更新。
+            const handleSparringResult = (studentId, opponentId, isCorrect) => {
+                let updatedStudents = [...students];
+                let updatedGroups = [...groups];
+                const logsToAdd = [];
+
+                const applyExp = (targetId, expGain, goldGain) => {
+                    let idx = updatedStudents.findIndex(s => s.id === targetId);
+                    if (idx === -1) return null;
+                    let s = { ...updatedStudents[idx] };
+                    let gIndex = updatedGroups.findIndex(g => g.id === s.groupId);
+
+                    s.exp += expGain;
+                    s.gold += (goldGain || 0);
+                    if (gIndex !== -1) updatedGroups[gIndex] = { ...updatedGroups[gIndex], score: (updatedGroups[gIndex].score || 0) + expGain };
+
+                    let reqExp = getExpReq(s.level);
+                    let leveledUp = false;
+                    while (s.exp >= reqExp) {
+                        s.exp -= reqExp;
+                        s.level += 1;
+                        s.maxHp += 5;
+                        const synergy = getGroupSynergy(s.groupId, updatedStudents);
+                        s.hp = s.maxHp + synergy.hpBonus;
+                        leveledUp = true;
+                        reqExp = getExpReq(s.level);
+                    }
+                    updatedStudents[idx] = s;
+                    return { student: s, leveledUp };
+                };
+
+                // 出戰者
+                const expGain = isCorrect ? 50 : 20;
+                const goldGain = isCorrect ? 25 : 0;
+                const playerResult = applyExp(studentId, expGain, goldGain);
+                if (playerResult) {
+                    logsToAdd.push({ msg: isCorrect
+                        ? `🤝 ${playerResult.student.name} 在成員團練中答對了，獲得了 ${expGain} EXP 與 ${goldGain} G！`
+                        : `💪 ${playerResult.student.name} 團練雖然答錯，但勇於嘗試依然獲得了 ${expGain} EXP！`, classId: playerResult.student.classId });
+                    if (playerResult.leveledUp) logsToAdd.push({ msg: `🆙 ${playerResult.student.name} 升級到了等級 ${playerResult.student.level}！`, classId: playerResult.student.classId });
+                }
+
+                // 陪練對手：固定給予參與獎勵，不管出戰者答對答錯都有
+                const oppExpGain = 20;
+                const opponentResult = applyExp(opponentId, oppExpGain, 0);
+                if (opponentResult) {
+                    logsToAdd.push({ msg: `🛡️ ${opponentResult.student.name} 擔任本次團練的陪練，獲得了 ${oppExpGain} EXP！`, classId: opponentResult.student.classId });
+                    if (opponentResult.leveledUp) logsToAdd.push({ msg: `🆙 ${opponentResult.student.name} 升級到了等級 ${opponentResult.student.level}！`, classId: opponentResult.student.classId });
+                }
+
+                setStudents(updatedStudents);
+                setGroups(updatedGroups);
+                playAudio(isCorrect ? 'win' : 'coin');
+                logsToAdd.forEach(l => addLog(l.msg, l.classId));
+            };
+
             // ★ 更新：綜合的獎懲執行邏輯 (加扣分與金幣)
             // ★ 修正：一次處理整批學生，避免多選時互相覆蓋更新
             const handleApplyRule = (studentIds, ruleId) => {
@@ -3187,7 +3444,7 @@
                         {view === 'admin' && <AdminPanel students={students} classes={classes} groups={groups} onApprove={handleApproveCustomAvatar} onReject={handleRejectCustomAvatar} onArchiveClass={handleArchiveClass} onDeleteClass={handleDeleteClass} onAddGroup={handleAddGroup} onDeleteGroup={handleDeleteGroup} onDeleteStudent={handleDeleteStudent} onMoveStudent={handleMoveStudent} />}
                         {view === 'dashboard' && <Dashboard classId={currentClassId} groups={groups} students={students} logs={logs} />}
                         {view === 'roster' && <Roster classId={currentClassId} branchName={currentClassId === 'admin' ? '全公會管理中心' : getClassObj(currentClassId)?.name} groups={groups} students={students} getGroup={getGroup} onOpenShop={setShopBuyerId} onOpenAvatarEditor={setEditingAvatarId} onAddGroup={handleAddGroup} onAddStudent={handleAddStudent} ruleItems={ruleItems} onAddRuleItem={handleAddRuleItem} onDeleteRuleItem={handleDeleteRuleItem} onApplyRule={handleApplyRule} onApplyTeamRule={handleApplyTeamRule} lastAction={lastAction} onUndoLastAction={handleUndoLastAction} />}
-                        {view === 'quest' && <QuestBoard classId={currentClassId} students={students} groups={groups} squadBosses={squadBosses} guildBoss={guildBoss} onResult={handleQuestResult} onSpawnBoss={handleSpawnBoss} onBossAttack={handleBossAttack} dailyDrawn={dailyDrawn} onRecordDraw={handleRecordDraw} onResetDailyDrawn={handleResetDailyDrawn} liveDraw={liveDraw} onBroadcastDraw={handleBroadcastDraw} />}
+                        {view === 'quest' && <QuestBoard classId={currentClassId} students={students} groups={groups} squadBosses={squadBosses} guildBoss={guildBoss} onResult={handleQuestResult} onSpawnBoss={handleSpawnBoss} onBossAttack={handleBossAttack} dailyDrawn={dailyDrawn} onRecordDraw={handleRecordDraw} onResetDailyDrawn={handleResetDailyDrawn} liveDraw={liveDraw} onBroadcastDraw={handleBroadcastDraw} onSparringResult={handleSparringResult} />}
                     </main>
 
                     {/* Modal Layer */}
