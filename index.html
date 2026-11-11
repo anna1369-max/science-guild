@@ -339,6 +339,15 @@
             });
         };
 
+        // ★ 教師辦公室密碼：只存「加鹽後的雜湊值」，不存明碼
+        const newSalt = () => Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+        const hashTeacherPw = async (pw, salt) => {
+            const enc = new TextEncoder();
+            const key = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
+            const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: enc.encode(salt), iterations: 100000, hash: 'SHA-256' }, key, 256);
+            return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+        };
+
         const INITIAL_CLASSES = [ { id: 1, name: '701班' }, { id: 2, name: '702班' } ];
         const INITIAL_GROUPS = [ { id: 1, classId: 1, name: '獅鷲小隊', score: 0 }, { id: 2, classId: 1, name: '獨角獸小隊', score: 0 }, { id: 3, classId: 2, name: '鳳凰小隊', score: 0 } ];
         
@@ -1262,8 +1271,9 @@
             );
         };
 
-        const AdminPanel = ({ students, classes, groups, onApprove, onReject, onArchiveClass, onDeleteClass, onAddGroup, onDeleteGroup, onDeleteStudent, onMoveStudent, onSetGender }) => {
+        const AdminPanel = ({ students, classes, groups, onApprove, onReject, onArchiveClass, onDeleteClass, onAddGroup, onDeleteGroup, onDeleteStudent, onMoveStudent, onSetGender, onChangeTeacherPw }) => {
             const [tab, setTab] = useState('avatar'); 
+            const [pwOld, setPwOld] = useState(''); const [pwNew, setPwNew] = useState(''); const [pwNew2, setPwNew2] = useState(''); const [pwMsg, setPwMsg] = useState(null);
             const [confirmModal, setConfirmModal] = useState(null);
             const [manageClassId, setManageClassId] = useState(null);
             const [manageSubTab, setManageSubTab] = useState('group');
@@ -1291,6 +1301,7 @@
                     <div className="flex border-b border-guild-gold/30 mb-6">
                         <button onClick={() => setTab('avatar')} className={`px-6 py-3 font-bold transition ${tab === 'avatar' ? 'bg-guild-gold text-guild-dark' : 'text-gray-400 hover:text-white'}`}><i className="fa-solid fa-user-check mr-2"></i>頭像審核</button>
                         <button onClick={() => setTab('class')} className={`px-6 py-3 font-bold transition ${tab === 'class' ? 'bg-guild-gold text-guild-dark' : 'text-gray-400 hover:text-white'}`}><i className="fa-solid fa-school mr-2"></i>分會(班級)管理</button>
+                        <button onClick={() => setTab('security')} className={`px-6 py-3 font-bold transition ${tab === 'security' ? 'bg-guild-gold text-guild-dark' : 'text-gray-400 hover:text-white'}`}><i className="fa-solid fa-key mr-2"></i>教師密碼</button>
                     </div>
 
                     {tab === 'avatar' && (
@@ -1315,6 +1326,23 @@
                                     ))}
                                 </div>
                             )}
+                        </div>
+                    )}
+
+                    {tab === 'security' && (
+                        <div className="panel p-6 max-w-md space-y-3 animate-fade-in">
+                            <h3 className="text-xl font-bold text-guild-gold"><i className="fa-solid fa-key mr-2"></i>修改教師密碼</h3>
+                            <input type="password" value={pwOld} onChange={e => setPwOld(e.target.value)} placeholder="目前密碼" className="w-full p-3 bg-guild-dark border border-gray-600 rounded text-guild-paper" />
+                            <input type="password" value={pwNew} onChange={e => setPwNew(e.target.value)} placeholder="新密碼（至少 6 個字元）" className="w-full p-3 bg-guild-dark border border-gray-600 rounded text-guild-paper" />
+                            <input type="password" value={pwNew2} onChange={e => setPwNew2(e.target.value)} placeholder="再輸入一次新密碼" className="w-full p-3 bg-guild-dark border border-gray-600 rounded text-guild-paper" />
+                            {pwMsg && <p className={`text-sm ${pwMsg.ok ? 'text-green-400' : 'text-red-400'}`}>{pwMsg.text}</p>}
+                            <button onClick={async () => {
+                                if (pwNew !== pwNew2) return setPwMsg({ ok: false, text: '兩次輸入的新密碼不一致' });
+                                const err = await onChangeTeacherPw(pwOld, pwNew);
+                                if (err) setPwMsg({ ok: false, text: err });
+                                else { setPwMsg({ ok: true, text: '✅ 密碼已更新' }); setPwOld(''); setPwNew(''); setPwNew2(''); }
+                            }} className="px-6 py-3 bg-guild-gold text-guild-dark font-bold rounded">更新密碼</button>
+                            <p className="text-xs text-gray-500">提醒：所有老師使用的裝置都要換成新版檔案，舊版檔案存檔時會把密碼設定清掉。</p>
                         </div>
                     )}
 
@@ -2428,6 +2456,15 @@
             const [ruleItems, setRuleItems] = useState([]);
             const [dailyDrawn, setDailyDrawn] = useState({}); // ★ 抽人「當日抽過不再抽」紀錄：{ [classId]: { date, ids: [] } }
             const [liveDraw, setLiveDraw] = useState({}); // ★ 跨裝置同步抽人：{ [classId]: { tab, groupId, studentId, ts, deviceId } }
+            const [teacherAuth, setTeacherAuth] = useState(null); // { salt, hash }；null = 尚未設定密碼
+            const [teacherUnlocked, setTeacherUnlocked] = useState(false);
+            const [gateOpen, setGateOpen] = useState(false);
+            const [gatePw, setGatePw] = useState('');
+            const [gatePw2, setGatePw2] = useState('');
+            const [gateErr, setGateErr] = useState('');
+            const [gateFails, setGateFails] = useState(0);
+            const [gateLockUntil, setGateLockUntil] = useState(0);
+            const pendingAction = useRef(null); // 密碼驗證通過後要執行的動作
             const [lastAction, setLastAction] = useState(null); // ★ 加錯撤銷：{ students, groups, description, classId } 只保留最近一次
             
             // 雲端連線狀態與阻斷機制
@@ -2562,6 +2599,7 @@
                         setGuildBoss(data.guildBoss || null);
                         setDailyDrawn(data.dailyDrawn || {});
                         setLiveDraw(data.liveDraw || {});
+                        setTeacherAuth(data.teacherAuth || null);
                         
                         // 相容舊版扣分資料轉換為新版獎懲系統
                         let loadedRules = data.ruleItems || data.penaltyItems;
@@ -2611,6 +2649,8 @@
                         setRuleItems(parsed);
                     }
                     if (savedDailyDrawn) setDailyDrawn(JSON.parse(savedDailyDrawn));
+                    const savedAuth = localStorage.getItem('guild_teacher_auth');
+                    if (savedAuth) setTeacherAuth(JSON.parse(savedAuth));
                 } else {
                     setClasses(INITIAL_CLASSES);
                     setStudents(ensureGenders(INITIAL_STUDENTS));
@@ -2630,6 +2670,7 @@
                     localStorage.setItem('guild_guild_boss', JSON.stringify(guildBoss));
                     localStorage.setItem('guild_rule_items', JSON.stringify(ruleItems));
                     localStorage.setItem('guild_daily_drawn', JSON.stringify(dailyDrawn));
+                    localStorage.setItem('guild_teacher_auth', JSON.stringify(teacherAuth));
                 }
 
                 if (!isCloudLoaded || !user || !window.db) return;
@@ -2640,7 +2681,7 @@
                     return;
                 }
                 
-                const payload = { classes, students, groups, logs, squadBosses, guildBoss, ruleItems, dailyDrawn, liveDraw };
+                const payload = { classes, students, groups, logs, squadBosses, guildBoss, ruleItems, dailyDrawn, liveDraw, teacherAuth };
                 const cleanPayload = JSON.parse(JSON.stringify(payload));
                 
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'science-guild';
@@ -2655,7 +2696,7 @@
                     }
                 });
                 
-            }, [classes, students, groups, logs, squadBosses, guildBoss, ruleItems, dailyDrawn, liveDraw, isCloudLoaded, user]);
+            }, [classes, students, groups, logs, squadBosses, guildBoss, ruleItems, dailyDrawn, liveDraw, teacherAuth, isCloudLoaded, user]);
 
             const addLog = (msg, targetClassId = currentClassId) => {
                 const time = new Date().toLocaleTimeString('zh-TW', { hour12: false });
@@ -3362,7 +3403,48 @@
                 addLog(`🔀 將冒險者 ${student.name} 從【${oldGroupName}】調動至【${newGroupName}】`, student.classId);
             };
 
+            const enterTeacherOffice = () => { setCurrentClassId('admin'); setLoginMode('teacher'); setView('admin'); };
+            const requireTeacher = (action) => {
+                if (teacherUnlocked) return action();
+                pendingAction.current = action;
+                setGatePw(''); setGatePw2(''); setGateErr(''); setGateOpen(true);
+            };
+            const openTeacherOffice = () => requireTeacher(enterTeacherOffice);
+            const submitGate = async () => {
+                if (Date.now() < gateLockUntil) { setGateErr('錯誤次數過多，請稍候 30 秒再試'); return; }
+                try {
+                    if (!teacherAuth) {
+                        if (gatePw.length < 6) { setGateErr('密碼至少 6 個字元'); return; }
+                        if (gatePw !== gatePw2) { setGateErr('兩次輸入的密碼不一致'); return; }
+                        const salt = newSalt();
+                        setTeacherAuth({ salt, hash: await hashTeacherPw(gatePw, salt) });
+                    } else {
+                        const hash = await hashTeacherPw(gatePw, teacherAuth.salt);
+                        if (hash !== teacherAuth.hash) {
+                            const n = gateFails + 1; setGateFails(n);
+                            if (n >= 5) { setGateLockUntil(Date.now() + 30000); setGateFails(0); setGateErr('錯誤次數過多，請稍候 30 秒再試'); }
+                            else setGateErr(`密碼錯誤（還可嘗試 ${5 - n} 次）`);
+                            return;
+                        }
+                    }
+                } catch (e) { setGateErr('此瀏覽器環境不支援加密，請改用 https 網址開啟'); return; }
+                setGateFails(0); setTeacherUnlocked(true); setGateOpen(false); setGatePw(''); setGatePw2('');
+                const act = pendingAction.current; pendingAction.current = null;
+                if (act) act();
+            };
+            const changeTeacherPw = async (oldPw, newPw) => {
+                if (!teacherAuth) return '尚未設定密碼';
+                try {
+                    if ((await hashTeacherPw(oldPw, teacherAuth.salt)) !== teacherAuth.hash) return '目前密碼錯誤';
+                    if (newPw.length < 6) return '新密碼至少 6 個字元';
+                    const salt = newSalt();
+                    setTeacherAuth({ salt, hash: await hashTeacherPw(newPw, salt) });
+                    return '';
+                } catch (e) { return '此瀏覽器環境不支援加密'; }
+            };
+
             const handleLogout = () => {
+                setTeacherUnlocked(false);
                 setCurrentClassId(null);
                 setShopBuyerId(null);
                 setLoginMode(null);
@@ -3433,7 +3515,7 @@
                 );
             }
 
-            if (currentClassId === null) {
+            if (currentClassId === null || (loginMode !== 'student' && !teacherUnlocked)) {
                 const worldLogs = logs.filter(l => l.classId === null);
 
                 return (
@@ -3451,6 +3533,21 @@
                             </button>
                         </div>
 
+                        {gateOpen && (
+                            <div className="fixed inset-0 bg-black/85 flex p-4 z-[120]">
+                                <div className="panel p-8 max-w-sm w-full m-auto text-center border-guild-gold shadow-[0_0_30px_rgba(197,159,68,0.3)]">
+                                    <i className="fa-solid fa-lock text-4xl text-guild-gold mb-3"></i>
+                                    <h3 className="text-2xl font-bold text-guild-gold mb-1">{teacherAuth ? '教師驗證' : '設定教師密碼'}</h3>
+                                    <p className="text-xs text-gray-400 mb-5">{teacherAuth ? '請輸入教師密碼' : '第一次使用：請設定教師密碼（至少 6 個字元），之後進入辦公室都需要輸入'}</p>
+                                    <input type="password" autoFocus value={gatePw} onChange={e => setGatePw(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitGate()} placeholder="教師密碼" className="w-full p-3 mb-3 bg-guild-dark border border-gray-600 rounded text-guild-paper" />
+                                    {!teacherAuth && <input type="password" value={gatePw2} onChange={e => setGatePw2(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitGate()} placeholder="再輸入一次" className="w-full p-3 mb-3 bg-guild-dark border border-gray-600 rounded text-guild-paper" />}
+                                    {gateErr && <p className="text-red-400 text-sm mb-3">{gateErr}</p>}
+                                    <button onClick={submitGate} className="w-full py-3 bg-guild-gold text-guild-dark font-bold rounded">{teacherAuth ? '進入' : '設定並進入'}</button>
+                                    <button onClick={() => { pendingAction.current = null; setGateOpen(false); }} className="w-full py-2 mt-2 text-gray-500 hover:text-white text-sm">取消</button>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="panel p-8 md:p-12 max-w-4xl w-full text-center shadow-[0_0_50px_rgba(197,159,68,0.15)] mb-8">
                             <i className="fa-solid fa-dragon text-6xl text-guild-gold mb-4"></i>
                             <h1 className="text-4xl font-bold text-guild-gold mb-2 tracking-widest">自然科學冒險者公會</h1>
@@ -3458,7 +3555,7 @@
                             
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-10">
                                 {classes.filter(c => !c.isArchived).map(c => (
-                                    <button key={c.id} onClick={() => { setCurrentClassId(c.id); setLoginMode('teacher'); }} className="panel p-8 border border-guild-gold/30 hover:border-guild-gold hover:bg-guild-gold/10 transition group transform hover:-translate-y-1">
+                                    <button key={c.id} onClick={() => requireTeacher(() => { setCurrentClassId(c.id); setLoginMode('teacher'); })} className="panel p-8 border border-guild-gold/30 hover:border-guild-gold hover:bg-guild-gold/10 transition group transform hover:-translate-y-1">
                                         <i className="fa-solid fa-dungeon text-4xl text-gray-500 group-hover:text-guild-gold mb-4 transition duration-300"></i>
                                         <h3 className="text-2xl font-bold text-guild-paper group-hover:text-white transition">{c.name}</h3>
                                         <p className="text-xs text-gray-500 mt-2">進入分會</p>
@@ -3469,11 +3566,11 @@
                                 <h4 className="text-guild-gold mb-3 font-bold"><i className="fa-solid fa-hammer mr-2"></i>拓荒建立新分會</h4>
                                 <div className="flex gap-2">
                                     <input type="text" id="newClassInput" placeholder="輸入新班級名稱 (如: 703班)" className="flex-1 p-3 bg-guild-dark border border-guild-gold/50 rounded text-guild-paper focus:outline-none focus:border-guild-gold transition" />
-                                    <button onClick={() => { const v = document.getElementById('newClassInput').value; if(v){ handleAddClass(v); document.getElementById('newClassInput').value=''; } }} className="px-6 py-3 bg-guild-gold text-guild-dark font-bold rounded hover:bg-yellow-500 transition shadow-lg">建立</button>
+                                    <button onClick={() => { const v = document.getElementById('newClassInput').value; if(v){ requireTeacher(() => { handleAddClass(v); const el = document.getElementById('newClassInput'); if (el) el.value=''; }); } }} className="px-6 py-3 bg-guild-gold text-guild-dark font-bold rounded hover:bg-yellow-500 transition shadow-lg">建立</button>
                                 </div>
                             </div>
                             <div className="mt-8 pt-4">
-                                <button onClick={() => { setCurrentClassId('admin'); setLoginMode('teacher'); setView('admin'); }} className="text-gray-500 hover:text-guild-gold transition text-sm flex items-center justify-center w-full">
+                                <button onClick={openTeacherOffice} className="text-gray-500 hover:text-guild-gold transition text-sm flex items-center justify-center w-full">
                                     <i className="fa-solid fa-gear mr-2"></i> 進入教師辦公室 (管理後台)
                                 </button>
                             </div>
@@ -3635,7 +3732,7 @@
                     )}
 
                     <main className="flex-1 p-4 md:p-8 overflow-y-auto">
-                        {view === 'admin' && <AdminPanel students={students} classes={classes} groups={groups} onApprove={handleApproveCustomAvatar} onReject={handleRejectCustomAvatar} onArchiveClass={handleArchiveClass} onDeleteClass={handleDeleteClass} onAddGroup={handleAddGroup} onDeleteGroup={handleDeleteGroup} onDeleteStudent={handleDeleteStudent} onMoveStudent={handleMoveStudent} onSetGender={handleSetGender} />}
+                        {view === 'admin' && teacherUnlocked && <AdminPanel onChangeTeacherPw={changeTeacherPw} students={students} classes={classes} groups={groups} onApprove={handleApproveCustomAvatar} onReject={handleRejectCustomAvatar} onArchiveClass={handleArchiveClass} onDeleteClass={handleDeleteClass} onAddGroup={handleAddGroup} onDeleteGroup={handleDeleteGroup} onDeleteStudent={handleDeleteStudent} onMoveStudent={handleMoveStudent} onSetGender={handleSetGender} />}
                         {view === 'dashboard' && <Dashboard classId={currentClassId} groups={groups} students={students} logs={logs} />}
                         {view === 'roster' && <Roster classId={currentClassId} branchName={currentClassId === 'admin' ? '全公會管理中心' : getClassObj(currentClassId)?.name} groups={groups} students={students} getGroup={getGroup} onOpenShop={setShopBuyerId} onOpenAvatarEditor={setEditingAvatarId} onAddGroup={handleAddGroup} onAddStudent={handleAddStudent} ruleItems={ruleItems} onAddRuleItem={handleAddRuleItem} onDeleteRuleItem={handleDeleteRuleItem} onApplyRule={handleApplyRule} onApplyTeamRule={handleApplyTeamRule} lastAction={lastAction} onUndoLastAction={handleUndoLastAction} />}
                         {view === 'quest' && <QuestBoard classId={currentClassId} students={students} groups={groups} squadBosses={squadBosses} guildBoss={guildBoss} onResult={handleQuestResult} onSpawnBoss={handleSpawnBoss} onBossAttack={handleBossAttack} dailyDrawn={dailyDrawn} onRecordDraw={handleRecordDraw} onResetDailyDrawn={handleResetDailyDrawn} liveDraw={liveDraw} onBroadcastDraw={handleBroadcastDraw} onSparringResult={handleSparringResult} onToggleProjector={openProjector} projectorOpen={!!(projectorWin && !projectorWin.closed)} />}
