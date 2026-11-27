@@ -286,6 +286,11 @@
             { id: 'f_cyan', name: '精靈流光外框', desc: '純淨魔力環繞的水藍外框', cost: 300, type: 'frame', icon: 'fa-water', color: 'text-cyan-400', value: 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.8)]' }
         ];
 
+        // ★ 背包／武器規則輔助函式
+        const weaponTier = (w) => parseInt(((w && w.id) || '').charAt(1)) || 0; // w1_ → 1、w2_ → 2
+        const bestWeaponTier = (s, job) => Math.max(0, ...[s.equipment, ...(s.inventory || [])].filter(w => w && w.type === 'equipment' && w.job === job).map(weaponTier));
+        const slimItem = (item) => JSON.parse(JSON.stringify(item)); // 去掉 effect 函式，才能存進雲端
+
         const genOpts = (prefix, count, label) => Array.from({ length: count }, (_, i) => ({ id: `${prefix}${String(i + 1).padStart(2, '0')}`, name: `${label} ${String(i + 1).padStart(2, '0')}` }));
 
         const AVATAR_OPTIONS = {
@@ -2323,7 +2328,8 @@
                                     {SHOP_ITEMS.filter(item => item.type === 'consumable' || item.type === 'passive' || item.type === 'special').map(item => {
                                         const canAfford = buyer.gold >= item.cost;
                                         const isWrongJob = item.job && buyer.job !== item.job;
-                                        const disabled = !canAfford || isWrongJob;
+                                        const hasTicket = item.id === 'i_job' && (buyer.inventory || []).some(i => i.id === 'i_job');
+ const disabled = !canAfford || isWrongJob || hasTicket;
                                         
                                         let itemBg = 'bg-guild-dark/50 hover:bg-guild-dark';
                                         let titleColor = 'text-guild-paper';
@@ -2351,7 +2357,7 @@
                                                     <p className="text-xs text-gray-400 mb-4 flex-grow z-10 leading-relaxed">{item.desc}</p>
                                                     {item.job && <div className="text-xs font-bold text-blue-400 mb-3 z-10"><i className="fa-solid fa-circle-exclamation mr-1"></i>限定職業: {item.job}</div>}
                                                     <button onClick={() => onBuy(buyer.id, item)} disabled={disabled} className={`mt-auto w-full py-2 rounded font-bold transition flex items-center justify-center gap-2 z-10 ${disabled ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : (item.type === 'special' ? 'bg-purple-600 text-white hover:bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'bg-guild-gold text-guild-dark hover:bg-yellow-400 hover:scale-[1.02]')}`}>
-                                                        {isWrongJob ? <><i className="fa-solid fa-ban"></i> 職業不符</> : !canAfford ? <><i className="fa-solid fa-lock"></i> 金幣不足</> : <><i className="fa-solid fa-cart-shopping"></i> 購買</>}
+                                                        {isWrongJob ? <><i className="fa-solid fa-ban"></i> 職業不符</> : hasTicket ? <><i className="fa-solid fa-box"></i> 已持有，請到背包使用</> : !canAfford ? <><i className="fa-solid fa-lock"></i> 金幣不足</> : <><i className="fa-solid fa-cart-shopping"></i> 購買（放入背包）</>}
                                                     </button>
                                                 </div>
                                             </div>
@@ -2364,7 +2370,8 @@
                                     {SHOP_ITEMS.filter(item => item.type === 'equipment').map(item => {
                                         const canAfford = buyer.gold >= item.cost;
                                         const isWrongJob = item.job && buyer.job !== item.job;
-                                        const disabled = !canAfford || isWrongJob;
+                                        const blockedWeapon = !isWrongJob && weaponTier(item) <= bestWeaponTier(buyer, item.job);
+ const disabled = !canAfford || isWrongJob || blockedWeapon;
                                         
                                         // 判斷 T2 武器賦予藍色史詩光芒
                                         let itemBg = 'bg-guild-dark/50 hover:bg-guild-dark';
@@ -2393,7 +2400,7 @@
                                                     <p className="text-xs text-gray-400 mb-4 flex-grow z-10 leading-relaxed">{item.desc}</p>
                                                     {item.job && <div className="text-xs font-bold text-blue-400 mb-3 z-10"><i className="fa-solid fa-circle-exclamation mr-1"></i>限定職業: {item.job}</div>}
                                                     <button onClick={() => onBuy(buyer.id, item)} disabled={disabled} className={`mt-auto w-full py-2 rounded font-bold transition flex items-center justify-center gap-2 z-10 ${disabled ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : (item.id.includes('w2_') ? 'bg-blue-700 text-white hover:bg-blue-600 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : 'bg-guild-gold text-guild-dark hover:bg-yellow-400 hover:scale-[1.02]')}`}>
-                                                        {isWrongJob ? <><i className="fa-solid fa-ban"></i> 職業不符</> : !canAfford ? <><i className="fa-solid fa-lock"></i> 金幣不足</> : <><i className="fa-solid fa-khanda"></i> 裝備</>}
+                                                        {isWrongJob ? <><i className="fa-solid fa-ban"></i> 職業不符</> : blockedWeapon ? <><i className="fa-solid fa-check"></i> 已有同級或更好的武器</> : !canAfford ? <><i className="fa-solid fa-lock"></i> 金幣不足</> : <><i className="fa-solid fa-cart-shopping"></i> 購買（放入背包）</>}
                                                     </button>
                                                 </div>
                                             </div>
@@ -3233,10 +3240,18 @@
             const changeJob = (studentId, newJob) => {
                 let updated = [...students];
                 let sIndex = updated.findIndex(s => s.id === studentId);
-                updated[sIndex] = { ...updated[sIndex], job: newJob };
+                let s = { ...updated[sIndex], inventory: [...(updated[sIndex].inventory || [])] };
+                const ti = s.inventory.findIndex(i => i.id === 'i_job');
+                if (ti === -1) { setShowJobModal(null); return alert('背包裡沒有轉職憑證！'); }
+                if (s.job === newJob) return alert('你目前已經是這個職業了！');
+                s.inventory.splice(ti, 1);
+                const hadWeapon = !!s.equipment;
+                if (hadWeapon) { s.inventory.push(slimItem(s.equipment)); s.equipment = null; }
+                s.job = newJob;
+                updated[sIndex] = s;
                 setStudents(updated);
                 setShowJobModal(null);
-                addLog(`🎉 ${updated[sIndex].name} 成功轉職為【${newJob}】！`, updated[sIndex].classId);
+                addLog(`🎉 ${s.name} 成功轉職為【${newJob}】！${hadWeapon ? '舊武器已放回背包。' : ''}`, s.classId);
             };
 
             const saveAvatar = (studentId, newAvatarObj) => {
@@ -3290,46 +3305,61 @@
             const buyItem = (studentId, item) => {
                 let updated = [...students];
                 let sIndex = updated.findIndex(s => s.id === studentId);
-                let student = { ...updated[sIndex] };
-                
-                if (student.gold >= item.cost) {
-                    if (item.id === 'i_job') {
-                        if (student.level < 5) {
-                            alert("等級不足 5 級，公會不受理您的轉職申請！請繼續努力。");
-                            return;
-                        }
-                        student.gold -= item.cost;
-                        updated[sIndex] = student;
-                        setStudents(updated);
-                        setShowJobModal(student);
-                        addLog(`📜 ${student.name} 花費 ${item.cost} G 購買了皇家轉職憑證，準備轉職！`, student.classId);
-                        return; 
-                    }
+                let student = { ...updated[sIndex], inventory: [...(updated[sIndex].inventory || [])] };
 
-                    student.gold -= item.cost;
-                    if (item.type === 'consumable') {
-                        const synergy = getGroupSynergy(student.groupId, updated);
-                        const effectiveMaxHp = student.maxHp + synergy.hpBonus;
-                        student = item.effect(student, effectiveMaxHp);
-                        addLog(`🧪 ${student.name} 使用了 ${item.name}。`, student.classId);
-                    } else if (item.type === 'equipment') {
-                        student.equipment = item;
-                        addLog(`⚔️ ${student.name} 裝備了 ${item.name}。`, student.classId);
-                    } else if (item.type === 'frame') {
-                        if (!student.avatar.unlockedFrames.includes(item.value)) {
-                            student.avatar.unlockedFrames.push(item.value);
-                            student.avatar.frameClass = item.value; 
-                            addLog(`👑 ${student.name} 購買並裝備了高階外框：${item.name}。`, student.classId);
-                        }
-                    } else {
-                        student.inventory.push(item);
-                        addLog(`🛍️ ${student.name} 購買了 ${item.name}。`, student.classId);
-                    }
-                    updated[sIndex] = student;
-                    setStudents(updated);
-                } else {
-                    alert("金幣不足！");
+                if (student.gold < item.cost) return alert("金幣不足！");
+                if (item.id === 'i_job') {
+                    if (student.level < 5) return alert("等級不足 5 級，公會不受理您的轉職申請！請繼續努力。");
+                    if (student.inventory.some(i => i.id === 'i_job')) return alert("你已經持有一張轉職憑證，請先到背包使用！");
                 }
+                if (item.type === 'equipment') {
+                    if (item.job !== student.job) return alert("職業不符，無法購買！");
+                    if (weaponTier(item) <= bestWeaponTier(student, item.job)) return alert("你已經擁有同等級或更好的武器，不需要重複購買！");
+                }
+                if (item.type === 'frame' && (student.avatar.unlockedFrames || []).includes(item.value)) return alert("這個外框已經解鎖過了！");
+
+                student.gold -= item.cost;
+                if (item.type === 'frame') {
+                    student.avatar = { ...student.avatar, unlockedFrames: [...(student.avatar.unlockedFrames || []), item.value], frameClass: item.value };
+                    addLog(`👑 ${student.name} 購買並裝備了高階外框：${item.name}。`, student.classId);
+                } else {
+                    student.inventory.push(slimItem(item));
+                    addLog(`🛍️ ${student.name} 購買了 ${item.name}，已放入背包。`, student.classId);
+                }
+                updated[sIndex] = student;
+                setStudents(updated);
+            };
+
+            // 從背包使用／裝備
+            const handleUseItem = (studentId, idx) => {
+                let updated = [...students];
+                let sIndex = updated.findIndex(s => s.id === studentId);
+                let student = { ...updated[sIndex], inventory: [...(updated[sIndex].inventory || [])] };
+                const owned = student.inventory[idx];
+                if (!owned) return;
+                const def = SHOP_ITEMS.find(i => i.id === owned.id) || owned;
+
+                if (owned.type === 'consumable') {
+                    const effMax = student.maxHp + getGroupSynergy(student.groupId, updated).hpBonus;
+                    if (student.hp >= effMax) return alert("生命值已滿，不需要使用！");
+                    student.inventory.splice(idx, 1);
+                    student = def.effect(student, effMax);
+                    addLog(`🧪 ${student.name} 使用了 ${owned.name}。`, student.classId);
+                } else if (owned.type === 'equipment') {
+                    if (owned.job !== student.job) return alert("職業不符，無法裝備！");
+                    student.inventory.splice(idx, 1);
+                    if (student.equipment) student.inventory.push(slimItem(student.equipment));
+                    student.equipment = slimItem(def);
+                    addLog(`⚔️ ${student.name} 裝備了 ${owned.name}。`, student.classId);
+                } else if (owned.id === 'i_job') {
+                    if (student.level < 5) return alert("等級不足 5 級，無法轉職！");
+                    setShowJobModal(student);
+                    return;
+                } else {
+                    return alert("這個道具會在需要時自動生效。");
+                }
+                updated[sIndex] = student;
+                setStudents(updated);
             };
 
             const handleAddClass = (name) => {
@@ -3467,6 +3497,28 @@
                     </div>
                 );
             }
+
+            const jobModalNode = showJobModal ? (() => {
+                const cur = students.find(s => s.id === showJobModal.id);
+                return (
+                    <div className="fixed inset-0 bg-black/80 flex p-4 z-[60] overflow-y-auto">
+                        <div className="panel p-6 max-w-5xl w-full text-center border-guild-gold shadow-[0_0_40px_rgba(197,159,68,0.4)] m-auto">
+                            <h2 className="text-3xl font-bold text-guild-gold mb-2">🎉 {showJobModal.name} 準備轉職！</h2>
+                            <p className="mb-6 text-gray-300">選定職業後，才會消耗背包裡的轉職憑證。正在裝備的武器會放回背包。</p>
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                                {['戰士', '法師', '遊俠', '刺客', '牧師'].map(job => (
+                                    <button key={job} disabled={cur && cur.job === job} onClick={() => changeJob(showJobModal.id, job)} className={`panel p-4 flex flex-col items-center gap-3 group transition ${cur && cur.job === job ? 'opacity-40 cursor-not-allowed' : 'bg-guild-dark/50 hover:bg-guild-dark hover:border-guild-gold'}`}>
+                                        <i className={`fa-solid ${JOBS[job].icon} text-5xl ${JOBS[job].color}`}></i>
+                                        <span className="font-bold text-xl text-guild-paper">{job}{cur && cur.job === job ? '（目前）' : ''}</span>
+                                        <span className="text-xs text-gray-400 h-10 flex items-center justify-center">{JOBS[job].bonus}</span>
+                                    </button>
+                                ))}
+                            </div>
+                            <button onClick={() => setShowJobModal(null)} className="mt-6 text-gray-400 hover:text-white">稍後再說（憑證保留在背包）</button>
+                        </div>
+                    </div>
+                );
+            })() : null;
 
             if (view === 'student_login') {
                 const doLogin = () => {
@@ -3655,14 +3707,17 @@
                                             <h4 className="text-gray-400 text-sm mb-2">當前裝備</h4>
                                             <div className="text-blue-300 font-bold">{student.equipment ? <><i className="fa-solid fa-khanda mr-2"></i>{student.equipment.name}</> : '尚無裝備'}</div>
                                         </div>
-                                        <div className="bg-guild-dark p-4 rounded border border-gray-700">
-                                            <h4 className="text-gray-400 text-sm mb-2">背包道具</h4>
-                                            <div className="flex flex-wrap gap-2">
-                                                {student.inventory.length === 0 ? <span className="text-gray-500">背包空空如也</span> : student.inventory.map((i, idx) => (
-                                                    <span key={idx} className="bg-gray-800 text-gray-300 px-2 py-1 rounded text-xs"><i className="fa-solid fa-box mr-1"></i>{i.name}</span>
-                                                ))}
+                                        <div className="bg-guild-dark p-4 rounded border border-gray-700 col-span-2">
+                                    <h4 className="text-gray-400 text-sm mb-2">背包道具</h4>
+                                    <div className="flex flex-col gap-2">
+                                        {student.inventory.length === 0 ? <span className="text-gray-500">背包空空如也</span> : student.inventory.map((i, idx) => (
+                                            <div key={idx} className="flex items-center justify-between gap-2 bg-gray-800 text-gray-300 px-3 py-2 rounded text-sm">
+                                                <span><i className="fa-solid fa-box mr-2"></i>{i.name}</span>
+                                                {i.type === 'passive' ? <span className="text-xs text-gray-500">陣亡時自動使用</span> : <button onClick={() => handleUseItem(student.id, idx)} className="px-3 py-1 bg-guild-gold text-guild-dark font-bold rounded text-xs hover:bg-yellow-400">{i.type === 'equipment' ? '裝備' : '使用'}</button>}
                                             </div>
-                                        </div>
+                                        ))}
+                                    </div>
+                                </div>
                                     </div>
                                     
                                     <div className="border-t border-gray-700 pt-4 mt-4 text-right">
@@ -3683,6 +3738,7 @@
                         {/* 學生視角的彈窗共用原本的元件 */}
                         {shopBuyerId && <Shop buyer={students.find(s => s.id === shopBuyerId)} onBuy={buyItem} onClose={() => setShopBuyerId(null)} students={students} />}
                         {editingAvatarId && <AvatarEditor student={students.find(s => s.id === editingAvatarId)} onSave={saveAvatar} onClose={() => setEditingAvatarId(null)} />}
+                        {jobModalNode}
                     </div>
                 )
             }
@@ -3743,24 +3799,8 @@
                     {projectorWin && !projectorWin.closed && <DrawProjector win={projectorWin} classId={currentClassId} students={students} groups={groups} liveDraw={liveDraw} dailyDrawn={dailyDrawn} />}
                     {editingAvatarId && <AvatarEditor student={students.find(s => s.id === editingAvatarId)} onSave={saveAvatar} onClose={() => setEditingAvatarId(null)} />}
                     
-                    {/* ★ 轉職視窗 (買卡後觸發) */}
-                    {showJobModal && (
-                        <div className="fixed inset-0 bg-black/80 flex p-4 z-50 overflow-y-auto">
-                            <div className="panel p-6 max-w-5xl w-full text-center border-guild-gold shadow-[0_0_40px_rgba(197,159,68,0.4)] m-auto">
-                                <h2 className="text-3xl font-bold text-guild-gold mb-2">🎉 {showJobModal.name} 準備轉職！</h2>
-                                <p className="mb-6 text-gray-300">歷經無數考驗與沉澱，請選擇你未來的專屬戰鬥之道。</p>
-                                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                                    {['戰士', '法師', '遊俠', '刺客', '牧師'].map(job => (
-                                        <button key={job} onClick={() => changeJob(showJobModal.id, job)} className="panel p-4 bg-guild-dark/50 hover:bg-guild-dark hover:border-guild-gold transition flex flex-col items-center gap-3 group">
-                                            <i className={`fa-solid ${JOBS[job].icon} text-5xl ${JOBS[job].color} drop-shadow-[0_0_10px_currentColor] group-hover:scale-110 transition-transform duration-300`}></i>
-                                            <span className="font-bold text-xl text-guild-paper">{job}</span>
-                                            <span className="text-xs text-gray-400 h-10 flex items-center justify-center">{JOBS[job].bonus}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                    {/* ★ 轉職視窗 */}
+                {jobModalNode}
                 </div>
             );
         };
